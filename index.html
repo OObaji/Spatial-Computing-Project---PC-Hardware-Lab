@@ -53,7 +53,7 @@
     <div id="info-overlay">
         <h1>LHU - PC Hardware VR Lab</h1>
         <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag to look. <strong>Hold click on component to grab, drag to rotate. Release to drop.</strong></p>
-        <p><strong>VR Headset:</strong> Left Stick to Walk. Right Stick to Turn. <strong>Hold Trigger to grab item and twist your hand to rotate it. Release to drop.</strong></p>
+        <p><strong>VR Headset:</strong> Left Stick to Walk. Right Stick to Snap-Turn. <strong>Hold Trigger to grab item and twist your hand to rotate it. Release to drop.</strong></p>
     </div>
 
     <script>
@@ -75,6 +75,7 @@
 
         const playerVelocity = new THREE.Vector3();
         let cameraAngles = { theta: 0, phi: 0 }; 
+        let rightSnapTurnReady = true; // Prevents wild spinning in VR
 
         const boardCanvas = document.createElement('canvas');
         boardCanvas.width = 1024;
@@ -238,10 +239,10 @@
             document.body.appendChild(renderer.domElement);
             document.body.appendChild(VRButton.createButton(renderer));
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Increased to maintain consistent base color
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4); // Decreased to soften stark shadows
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4); 
             directionalLight.position.set(2, 10, 5);
             directionalLight.castShadow = true;
             directionalLight.shadow.mapSize.width = 2048;
@@ -294,8 +295,8 @@
             controller2.add(createVRHand()); // Attach hand model
             cameraGroup.add(controller2);
 
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -5)]);
-            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 }); // Softened line
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -10)]);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
             controller1.add(new THREE.Line(lineGeometry, lineMaterial));
             controller2.add(new THREE.Line(lineGeometry, lineMaterial));
 
@@ -354,14 +355,12 @@
             carpetTex.wrapS = THREE.RepeatWrapping; carpetTex.wrapT = THREE.RepeatWrapping;
             carpetTex.repeat.set(16, 24);
 
+            // Softer ceiling texture to reduce flashing/moire effects
             const ceilCanvas = document.createElement('canvas');
             ceilCanvas.width = 256; ceilCanvas.height = 256;
             const ctxc = ceilCanvas.getContext('2d');
             ctxc.fillStyle = '#222222'; ctxc.fillRect(0,0,256,256); 
-            ctxc.fillStyle = '#333333'; ctxc.fillRect(2,2,124,124); 
-            ctxc.fillStyle = '#333333'; ctxc.fillRect(130,2,124,124); 
-            ctxc.fillStyle = '#333333'; ctxc.fillRect(2,130,124,124); 
-            ctxc.fillStyle = '#eef5ff'; ctxc.fillRect(130,130,124,124); 
+            ctxc.fillStyle = '#333333'; ctxc.fillRect(4,4,248,248); 
             const ceilTex = new THREE.CanvasTexture(ceilCanvas);
             ceilTex.wrapS = THREE.RepeatWrapping; ceilTex.wrapT = THREE.RepeatWrapping;
             ceilTex.repeat.set(8, 12);
@@ -677,6 +676,9 @@
                         popupGroup.visible = true;
                     }
 
+                    // Release old object if any
+                    if (grabbedObject) releaseGrabbedObject();
+
                     // Hold to Grab - Attaches to hand directly to follow physical hand movement
                     grabbedObject = hitObj;
                     controller.attach(grabbedObject);
@@ -685,7 +687,7 @@
                 }
             }
 
-            // Handle Teleport targeting if no object hit
+            // Handle Teleport targeting if no interactive object hit
             if (intersects.length > 0) {
                 const floorIntersect = intersects.find(i => i.object.userData && i.object.userData.isFloor);
                 if (floorIntersect) controller.userData.isTeleporting = true;
@@ -695,7 +697,7 @@
         function onSelectEnd(event) {
             const controller = event.target;
             
-            // Release Object (Drop)
+            // Release Object (Drop into physics gravity)
             if (grabbedObject && grabbedObject.parent === controller) {
                 scene.attach(grabbedObject);
                 grabbedObject = null;
@@ -807,7 +809,7 @@
                 cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
                 cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
             } else {
-                // VR Thumbstick Locomotion
+                // VR Thumbstick Locomotion (Comfort/Sickness Improvements)
                 const session = renderer.xr.getSession();
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
@@ -817,31 +819,40 @@
                             const xAxis = axes.length > 2 ? axes[2] : axes[0];
                             const yAxis = axes.length > 3 ? axes[3] : axes[1];
                             
-                            // Left Controller (Locomotion & Scaling)
+                            // Left Controller (Smooth Locomotion & Scaling)
                             if (source.handedness === 'left') {
                                 const moveDir = new THREE.Vector3(); 
                                 camera.getWorldDirection(moveDir); 
                                 moveDir.y = 0; moveDir.normalize();
                                 const moveRight = new THREE.Vector3().crossVectors(moveDir, camera.up).normalize();
                                 
-                                if (Math.abs(yAxis) > 0.1) cameraGroup.position.addScaledVector(moveDir, -yAxis * 3.5 * delta);
-                                if (Math.abs(xAxis) > 0.1) cameraGroup.position.addScaledVector(moveRight, xAxis * 3.5 * delta);
+                                // Reduced movement speed to combat motion sickness (2.0 instead of 3.5)
+                                if (Math.abs(yAxis) > 0.2) cameraGroup.position.addScaledVector(moveDir, -yAxis * 2.0 * delta);
+                                if (Math.abs(xAxis) > 0.2) cameraGroup.position.addScaledVector(moveRight, xAxis * 2.0 * delta);
                                 
-                                // Scale grabbed object
+                                // Scale grabbed object using up/down
                                 if (grabbedObject && Math.abs(yAxis) > 0.1) {
                                     const scaleAmount = yAxis > 0 ? 0.98 : 1.02;
                                     grabbedObject.scale.multiplyScalar(scaleAmount).clampScalar(0.1, 10.0);
                                 }
                             }
                             
-                            // Right Controller (Turning & Object Rotation Fallback)
+                            // Right Controller (Snap Turning for comfort + Object Rotation)
                             if (source.handedness === 'right') {
-                                if (!grabbedObject && Math.abs(xAxis) > 0.1) {
-                                    cameraGroup.rotation.y -= xAxis * 2.5 * delta;
-                                }
-                                if (grabbedObject) {
-                                    if (Math.abs(xAxis) > 0.1) grabbedObject.rotation.y += xAxis * 3.0 * delta;
-                                    if (Math.abs(yAxis) > 0.1) grabbedObject.rotation.x += yAxis * 3.0 * delta;
+                                if (!grabbedObject) {
+                                    // Snap Turning logic (Prevents motion sickness nausea)
+                                    if (Math.abs(xAxis) > 0.5) {
+                                        if (rightSnapTurnReady) {
+                                            cameraGroup.rotation.y -= Math.sign(xAxis) * (Math.PI / 6); // Snap 30 degrees
+                                            rightSnapTurnReady = false;
+                                        }
+                                    } else {
+                                        rightSnapTurnReady = true; // Reset when stick is released
+                                    }
+                                } else {
+                                    // Rotate the object being held smoothly
+                                    if (Math.abs(xAxis) > 0.1) grabbedObject.rotation.y += xAxis * 2.0 * delta;
+                                    if (Math.abs(yAxis) > 0.1) grabbedObject.rotation.x += yAxis * 2.0 * delta;
                                 }
                             }
                         }
@@ -854,8 +865,8 @@
             // Object Updates (Fans & Gravity)
             interactableObjects.forEach(obj => {
                 if (obj.userData && obj.userData.isHardware) {
-                    // Spin Fans
-                    obj.traverse(c => { if (c.userData.isFan) c.rotation.y += 10 * delta; });
+                    // Spin Fans (Reduced speed to prevent strobing/flashing effects)
+                    obj.traverse(c => { if (c.userData.isFan) c.rotation.y += 1.5 * delta; });
                     
                     // Gravity Physics
                     if (obj !== grabbedObject) {
@@ -881,7 +892,7 @@
                 }
             });
 
-            // Handle Teleport marker
+            // Handle Teleport marker aiming
             if (renderer.xr.isPresenting) {
                 let isAimingTeleport = false;
                 [controller1, controller2].forEach(c => {
