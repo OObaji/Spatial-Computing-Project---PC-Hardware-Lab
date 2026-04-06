@@ -52,7 +52,7 @@
 
     <div id="info-overlay">
         <h1>LHU - PC Hardware VR Lab</h1>
-        <p><strong>Desktop:</strong> W,A,S,D to walk. Click/Drag to look. <strong>Click component to inspect. Walk away to drop.</strong></p>
+        <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag empty space to look around. Click INFO to read. <strong>Click components to inspect. It stays in place; walk away to drop it.</strong></p>
         <p><strong>VR Headset:</strong> Left Stick to Walk. Right Stick to Turn. Trigger to Grab/Interact. <strong>Right Stick (while holding) to rotate object.</strong></p>
     </div>
 
@@ -672,9 +672,7 @@
             }
         }
 
-        function onSelectEnd(event) {
-            // Trigger release logic if needed, currently using click-to-drop toggle
-        }
+        function onSelectEnd(event) {}
 
         function onKeyDown(e) { keys[e.key.toLowerCase()] = true; }
         function onKeyUp(e) { keys[e.key.toLowerCase()] = false; }
@@ -741,13 +739,12 @@
                 const playerPos = new THREE.Vector3();
                 camera.getWorldPosition(playerPos);
                 const dist = playerPos.distanceTo(grabbedObject.position);
-                if (dist > 2.2) { 
+                if (dist > 2.5) { 
                     releaseGrabbedObject();
                     popupGroup.visible = false;
                 }
             }
 
-            // Desktop Locomotion
             if (!renderer.xr.isPresenting) {
                 document.getElementById('info-overlay').style.display = 'block';
                 camera.rotation.order = 'YXZ'; camera.rotation.y = cameraAngles.theta; camera.rotation.x = cameraAngles.phi;
@@ -762,29 +759,25 @@
                 cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
                 cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
             } else {
-                // VR Locomotion (Read Thumbsticks)
                 document.getElementById('info-overlay').style.display = 'none';
                 const session = renderer.xr.getSession();
-                if (session) {
+                if (session && session.inputSources) {
                     for (const source of session.inputSources) {
                         if (source.gamepad && source.gamepad.axes) {
-                            const axes = source.gamepad.axes; // [x1, y1, x2, y2]
+                            const axes = source.gamepad.axes; 
                             
-                            // Left Controller (Locomotion)
+                            // Left Controller (Locomotion & Scaling)
                             if (source.handedness === 'left') {
                                 const moveDir = new THREE.Vector3();
                                 camera.getWorldDirection(moveDir);
                                 moveDir.y = 0; moveDir.normalize();
                                 const moveRight = new THREE.Vector3().crossVectors(moveDir, camera.up).normalize();
                                 
-                                // axis[1] is Y (forward/back), axis[0] is X (strafe)
-                                const forward = -axes[1] * 3.0 * delta;
-                                const strafe = axes[0] * 3.0 * delta;
+                                // axis[1] is forward/back, axis[0] is strafe
+                                if (Math.abs(axes[1]) > 0.1) cameraGroup.position.addScaledVector(moveDir, -axes[1] * 3.5 * delta);
+                                if (Math.abs(axes[0]) > 0.1) cameraGroup.position.addScaledVector(moveRight, axes[0] * 3.5 * delta);
                                 
-                                cameraGroup.position.addScaledVector(moveDir, forward);
-                                cameraGroup.position.addScaledVector(moveRight, strafe);
-                                
-                                // Vertical scaling for grabbed objects on left stick
+                                // Scale grabbed object using left stick vertical if stationary
                                 if (grabbedObject && Math.abs(axes[1]) > 0.1) {
                                     const scaleAmount = axes[1] > 0 ? 0.98 : 1.02;
                                     grabbedObject.scale.multiplyScalar(scaleAmount);
@@ -794,9 +787,9 @@
                             
                             // Right Controller (Turning & Object Rotation)
                             if (source.handedness === 'right') {
-                                // View Turning
+                                // View Turning (Smooth)
                                 if (Math.abs(axes[0]) > 0.1) {
-                                    cameraGroup.rotation.y -= axes[0] * 2.0 * delta;
+                                    cameraGroup.rotation.y -= axes[0] * 2.5 * delta;
                                 }
                                 
                                 // Rotate grabbed object
@@ -808,7 +801,6 @@
                         }
                     }
                 }
-                // Constrain player
                 cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
                 cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
             }
