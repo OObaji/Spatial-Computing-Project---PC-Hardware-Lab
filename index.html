@@ -2,942 +2,357 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>LHU - Hardware Education VR Lab</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        #info-overlay {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: white;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px;
-            border-radius: 8px;
-            pointer-events: none;
-            max-width: 400px;
-            z-index: 10;
-        }
-        #info-overlay h1 {
-            margin: 0 0 10px 0;
-            font-size: 1.2rem;
-            color: #4CAF50;
-        }
-        #info-overlay p {
-            margin: 0;
-            font-size: 0.9rem;
-            line-height: 1.4;
-        }
-        /* Style for the VR Button */
-        #VRButton {
-            background-color: #4CAF50 !important;
-            border: none !important;
-            border-radius: 8px !important;
-            padding: 12px 24px !important;
-            font-weight: bold !important;
-            color: white !important;
-            cursor: pointer;
-        }
-    </style>
-    <!-- Three.js Library -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-</head>
-<body>
-
-    <div id="info-overlay">
-        <h1>LHU - PC Hardware VR Lab</h1>
-        <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag to look. <strong>Hold click on component to grab, drag to rotate. Release to drop.</strong></p>
-        <p><strong>VR Headset:</strong> <strong>Grip Button</strong> to Grab. <strong>Trigger</strong> to View Info/Teleport. Right Stick to Snap-Turn.</p>
-    </div>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accessible VR Maze - Spatial Computing Project</title>
+    
+    <!-- A-Frame VR Framework: Core engine for Spatial Computing in the browser -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <!-- A-Frame Environment Component: Provides high-quality, immersive backgrounds -->
+    <script src="https://unpkg.com/aframe-environment-component@1.3.3/dist/aframe-environment-component.min.js"></script>
 
     <script>
-        // --- Globals ---
-        let scene, camera, renderer;
-        let cameraGroup; 
-        let controller1, controller2;
-        let raycaster;
-        const pointer = new THREE.Vector2();
-        const clock = new THREE.Clock();
-        
-        const keys = { w: false, a: false, s: false, d: false };
-        let teleportMarker;
-
-        let grabbedObject = null;
-        const interactableObjects = [];
-        let sharedInfoMat = null;
-        let popupGroup; 
-
-        const playerVelocity = new THREE.Vector3();
-        let cameraAngles = { theta: 0, phi: 0 }; 
-        let rightSnapTurnReady = true; // Prevents wild spinning in VR
-
-        const boardCanvas = document.createElement('canvas');
-        boardCanvas.width = 1024;
-        boardCanvas.height = 512;
-        const boardCtx = boardCanvas.getContext('2d');
-        let boardTexture, boardMaterial;
-
-        const hardwareInfo = {
-            CPU: {
-                title: "CPU (Central Processing Unit)",
-                desc: ["The brain of the computer that processes instructions,", "runs the OS, and handles complex calculations.", "Specs: 8 Cores / 16 Threads, 4.5 GHz Clock Speed"],
-                color: "#4a90e2"
+        // Store multiple levels for progression
+        const mazeLevels = [
+            {
+                rot: "0 -90 0", // Rotates rig to look down the path instead of the wall
+                map: [
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                    [1, 3, 0, 0, 1, 0, 0, 0, 2, 1],
+                    [1, 4, 1, 0, 1, 0, 1, 1, 1, 1], // 4 = Control Panel
+                    [1, 1, 1, 0, 0, 0, 0, 0, 0, 1],
+                    [1, 0, 1, 1, 1, 1, 0, 1, 0, 1],
+                    [1, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+                    [1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                    [1, 0, 1, 1, 1, 1, 1, 1, 1, 1],
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+                ]
             },
-            Motherboard: {
-                title: "Motherboard",
-                desc: ["The main circuit board and central hub.", "Connects all different components together.", "Specs: ATX Form Factor, AM5 / LGA 1700 Socket"],
-                color: "#9c27b0"
-            },
-            RAM: {
-                title: "RAM (Random Access Memory)",
-                desc: ["Short-term memory storing data the CPU", "needs to access right now to keep apps running.", "Specs: 32GB Capacity, 6000 MHz Speed"],
-                color: "#50e3c2"
-            },
-            GPU: {
-                title: "GPU (Graphics Processing Unit)",
-                desc: ["The graphics engine. Handles rendering everything", "from video playback to high-end 3D gaming.", "Specs: 16GB GDDR6 VRAM, 2500 MHz Core Clock"],
-                color: "#e24a4a"
-            },
-            NVMe: {
-                title: "NVMe SSD",
-                desc: ["Super-fast, modern long-term storage where", "your OS, games, and files are permanently saved.", "Specs: 2TB Capacity, 7000 MB/s Read/Write"],
-                color: "#00bcd4"
-            },
-            HDD: {
-                title: "Hard Disk Drive (HDD)",
-                desc: ["Older, mechanical long-term storage that", "uses spinning magnetic disks. Great for mass storage.", "Specs: 8TB Capacity, 7200 RPM"],
-                color: "#ff9800"
-            },
-            PSU: {
-                title: "Power Supply Unit (PSU)",
-                desc: ["The heart of the computer. Converts wall electricity", "into exact voltages needed by each component.", "Specs: 850W Wattage, 80 Plus Gold Efficiency"],
-                color: "#795548"
-            },
-            Cooler: {
-                title: "CPU Cooler",
-                desc: ["Pulls extreme heat away from the CPU to", "stop the computer from overheating and shutting down.", "Specs: 1500 RPM Fan Speed, 25 dB Noise Level"],
-                color: "#607d8b"
+            {
+                rot: "0 180 0", 
+                map: [
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                    [1, 0, 0, 0, 0, 0, 1, 2, 1, 1],
+                    [1, 0, 1, 1, 1, 0, 1, 0, 1, 1],
+                    [1, 0, 1, 0, 0, 0, 1, 0, 1, 1],
+                    [1, 0, 1, 0, 1, 1, 1, 0, 1, 1],
+                    [1, 0, 0, 0, 1, 0, 0, 0, 1, 1],
+                    [1, 1, 1, 1, 1, 0, 1, 1, 1, 1],
+                    [1, 3, 0, 0, 0, 0, 0, 0, 0, 1],
+                    [1, 4, 1, 1, 1, 1, 1, 1, 1, 1]
+                ]
             }
-        };
-
-        let isQuizMode = false;
-        let currentQuestionIndex = 0;
-        const quizQuestions = [
-            { text: ["Question 1:", "Which component acts as the primary", "calculator and brain of the computer?"], answer: "CPU" },
-            { text: ["Question 2:", "Which component provides temporary,", "high-speed storage for active tasks?"], answer: "RAM" },
-            { text: ["Question 3:", "Which component is dedicated to rendering", "complex 3D graphics and visual output?"], answer: "GPU" },
-            { text: ["Question 4:", "Which component pulls electricity from the", "wall and converts it for the computer?"], answer: "PSU" },
-            { text: ["Question 5:", "Which component is the main circuit board", "that connects everything together?"], answer: "Motherboard" }
         ];
 
-        let quizButton;
-        let isDraggingCamera = false;
-        let isRotatingObject = false;
-        let dragDistance = 0;
-        let clickedUI = false;
-        let previousMousePosition = { x: 0, y: 0 };
+        window.currentLevelIndex = 0;
 
-        const deskTopMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        const deskLegMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-        const pcMat = new THREE.MeshStandardMaterial({ color: 0x151515 });
-        let screenMat; 
-
-        // --- Robust VR Button Utility ---
-        const VRButton = {
-            createButton: function ( renderer ) {
-                const button = document.createElement( 'button' );
-                button.id = 'VRButton';
-                button.style.display = 'none';
-                button.style.position = 'absolute';
-                button.style.bottom = '20px';
-                button.style.zIndex = '999';
-                button.style.left = 'calc(50% - 75px)';
-                button.style.width = '150px';
-
-                function showEnterVR() {
-                    let currentSession = null;
-                    async function onSessionStarted( session ) {
-                        session.addEventListener( 'end', onSessionEnded );
-                        await renderer.xr.setSession( session );
-                        button.textContent = 'EXIT VR';
-                        currentSession = session;
-                    }
-                    function onSessionEnded() {
-                        currentSession.removeEventListener( 'end', onSessionEnded );
-                        button.textContent = 'ENTER VR';
-                        currentSession = null;
-                    }
-                    button.style.display = 'block';
-                    button.textContent = 'ENTER VR';
-                    button.onclick = function () {
-                        if ( currentSession === null ) {
-                            button.textContent = 'STARTING...';
-                            const sessionInit = { optionalFeatures: [ 'local-floor', 'bounded-floor', 'hand-tracking' ] };
-                            navigator.xr.requestSession( 'immersive-vr', sessionInit )
-                                .then( onSessionStarted )
-                                .catch( err => {
-                                    button.textContent = 'ERROR: USE HTTPS';
-                                    console.error(err);
-                                    setTimeout(() => { button.textContent = 'ENTER VR'; }, 3000);
-                                });
-                        } else {
-                            currentSession.end();
-                        }
-                    };
-                }
-
-                if ( 'xr' in navigator ) {
-                    navigator.xr.isSessionSupported( 'immersive-vr' ).then( function ( supported ) {
-                        if (supported) {
-                            showEnterVR();
-                        } else {
-                            button.style.display = 'block';
-                            button.textContent = 'VR NOT SUPPORTED';
-                            button.disabled = true;
-                        }
-                    } ).catch(err => {
-                        button.style.display = 'block';
-                        button.textContent = 'XR CHECK ERROR';
-                    });
-                } else {
-                    button.style.display = 'block';
-                    button.textContent = 'WEBXR NOT AVAILABLE';
-                    button.disabled = true;
-                }
-                return button;
-            }
-        };
-
-        window.onload = function () {
-            init();
-            renderer.setAnimationLoop(animate);
-        };
-
-        function init() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x1a1e24); 
-            scene.fog = new THREE.Fog(0x1a1e24, 10, 45); 
-
-            cameraGroup = new THREE.Group();
-            cameraGroup.position.set(0, 0, 10); 
-            scene.add(cameraGroup);
-
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 1.6, 0); 
-            cameraGroup.add(camera);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true; 
-            renderer.shadowMap.enabled = true;
-            document.body.appendChild(renderer.domElement);
-            document.body.appendChild(VRButton.createButton(renderer));
-
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
-            scene.add(ambientLight);
-
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4); 
-            directionalLight.position.set(2, 10, 5);
-            directionalLight.castShadow = true;
-            directionalLight.shadow.mapSize.width = 2048;
-            directionalLight.shadow.mapSize.height = 2048;
-            directionalLight.shadow.bias = -0.001;
-            scene.add(directionalLight);
-
-            buildEnvironment();
-
-            popupGroup = new THREE.Group();
-            popupGroup.position.set(0.7, 0.1, -1.2); 
-            popupGroup.visible = false;
-            camera.add(popupGroup); 
-
-            const popupGeo = new THREE.PlaneGeometry(1.0, 0.5);
-            const popupMat = new THREE.MeshBasicMaterial({ map: boardTexture, transparent: true });
-            const popupMesh = new THREE.Mesh(popupGeo, popupMat);
-            popupGroup.add(popupMesh);
-
-            const closeCanvas = document.createElement('canvas');
-            closeCanvas.width = 128; closeCanvas.height = 64;
-            const cctx = closeCanvas.getContext('2d');
-            cctx.fillStyle = '#f44336'; cctx.fillRect(0,0,128,64);
-            cctx.fillStyle = '#ffffff'; cctx.font = 'bold 28px Arial'; cctx.textAlign = 'center'; cctx.fillText("CLOSE", 64, 42);
-            
-            const closeBtnGeo = new THREE.BoxGeometry(0.2, 0.08, 0.02);
-            const closeBtnMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(closeCanvas) });
-            const closeBtn = new THREE.Mesh(closeBtnGeo, closeBtnMat);
-            closeBtn.position.set(0, -0.3, 0.01);
-            closeBtn.userData = { isCloseButton: true };
-            popupGroup.add(closeBtn);
-            interactableObjects.push(closeBtn); 
-
-            const markerGeo = new THREE.RingGeometry(0.3, 0.4, 32);
-            markerGeo.rotateX(-Math.PI / 2);
-            const markerMat = new THREE.MeshBasicMaterial({ color: 0x4CAF50, transparent: true, opacity: 0.8 });
-            teleportMarker = new THREE.Mesh(markerGeo, markerMat);
-            teleportMarker.visible = false;
-            scene.add(teleportMarker);
-
-            // VR Controllers Setup
-            controller1 = renderer.xr.getController(0);
-            controller1.addEventListener('selectstart', onSelectStart);
-            controller1.addEventListener('selectend', onSelectEnd);
-            controller1.addEventListener('squeezestart', onSqueezeStart); // Add Grip Button support
-            controller1.addEventListener('squeezeend', onSqueezeEnd);
-            controller1.add(createVRHand()); // Attach hand model
-            cameraGroup.add(controller1);
-
-            controller2 = renderer.xr.getController(1);
-            controller2.addEventListener('selectstart', onSelectStart);
-            controller2.addEventListener('selectend', onSelectEnd);
-            controller2.addEventListener('squeezestart', onSqueezeStart); // Add Grip Button support
-            controller2.addEventListener('squeezeend', onSqueezeEnd);
-            controller2.add(createVRHand()); // Attach hand model
-            cameraGroup.add(controller2);
-
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -10)]);
-            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
-            controller1.add(new THREE.Line(lineGeometry, lineMaterial));
-            controller2.add(new THREE.Line(lineGeometry, lineMaterial));
-
-            raycaster = new THREE.Raycaster();
-
-            window.addEventListener('resize', onWindowResize);
-            document.addEventListener('mousedown', onMouseDown);
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-            document.addEventListener('wheel', onMouseWheel, {passive: false}); 
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-            document.addEventListener('touchstart', onTouchStart, {passive: false});
-            document.addEventListener('touchmove', onTouchMove, {passive: false});
-            document.addEventListener('touchend', onTouchEnd);
-
-            renderBoard("Liverpool Hope University", ["Welcome to the Hardware Lab.", "Select a component to learn about it,", "or start the Quiz to test your knowledge."], "#222233");
-        }
-
-        // --- Procedural VR Hands ---
-        function createVRHand() {
-            const handGroup = new THREE.Group();
-            const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0ac69 });
-            
-            // Palm
-            const palm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.08), skinMat);
-            handGroup.add(palm);
-
-            // Thumb
-            const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.04), skinMat);
-            thumb.position.set(-0.04, 0, -0.02);
-            thumb.rotation.y = -Math.PI / 4;
-            handGroup.add(thumb);
-
-            // Fingers
-            const fingerGeo = new THREE.BoxGeometry(0.018, 0.018, 0.05);
-            for(let i=0; i<3; i++) {
-                const finger = new THREE.Mesh(fingerGeo, skinMat);
-                finger.position.set(-0.025 + i * 0.025, 0, -0.06);
-                handGroup.add(finger);
-            }
-
-            handGroup.position.set(0, 0, -0.05);
-            handGroup.rotation.x = Math.PI / 8; // Angled down slightly to match grip
-            return handGroup;
-        }
-
-        function buildEnvironment() {
-            const carpetCanvas = document.createElement('canvas');
-            carpetCanvas.width = 256; carpetCanvas.height = 256;
-            const cctx = carpetCanvas.getContext('2d');
-            cctx.fillStyle = '#60656d'; cctx.fillRect(0,0,256,256);
-            cctx.fillStyle = '#585d65';
-            for(let i=0;i<256;i+=32) { for(let j=0;j<256;j+=32) { if((i+j)%64===0) cctx.fillRect(i,j,32,32); } }
-            const carpetTex = new THREE.CanvasTexture(carpetCanvas);
-            carpetTex.wrapS = THREE.RepeatWrapping; carpetTex.wrapT = THREE.RepeatWrapping;
-            carpetTex.repeat.set(16, 24);
-
-            // Softer ceiling texture to reduce flashing/moire effects
-            const ceilCanvas = document.createElement('canvas');
-            ceilCanvas.width = 256; ceilCanvas.height = 256;
-            const ctxc = ceilCanvas.getContext('2d');
-            ctxc.fillStyle = '#222222'; ctxc.fillRect(0,0,256,256); 
-            ctxc.fillStyle = '#333333'; ctxc.fillRect(4,4,248,248); 
-            const ceilTex = new THREE.CanvasTexture(ceilCanvas);
-            ceilTex.wrapS = THREE.RepeatWrapping; ceilTex.wrapT = THREE.RepeatWrapping;
-            ceilTex.repeat.set(8, 12);
-
-            const scrCanvas = document.createElement('canvas');
-            scrCanvas.width = 256; scrCanvas.height = 128;
-            const sctx = scrCanvas.getContext('2d');
-            sctx.fillStyle = '#87CEEB'; sctx.fillRect(0,0,256,128); 
-            sctx.fillStyle = '#228B22'; sctx.beginPath(); sctx.arc(128, 200, 100, 0, Math.PI*2); sctx.fill(); 
-            sctx.fillStyle = '#4682B4'; sctx.fillRect(0,100,256,28); 
-            screenMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(scrCanvas) });
-
-            const roomGeo = new THREE.BoxGeometry(16, 4.5, 26);
-            const roomMat = new THREE.MeshStandardMaterial({ color: 0x2a2f35, side: THREE.BackSide });
-            const room = new THREE.Mesh(roomGeo, roomMat);
-            room.position.set(0, 2.25, 0);
-            room.receiveShadow = true;
-            scene.add(room);
-
-            const floorGeo = new THREE.PlaneGeometry(16, 26);
-            const floorMat = new THREE.MeshStandardMaterial({ map: carpetTex });
-            const floor = new THREE.Mesh(floorGeo, floorMat);
-            floor.rotation.x = -Math.PI / 2;
-            floor.receiveShadow = true;
-            floor.userData.isFloor = true;
-            scene.add(floor);
-
-            const ceilGeo = new THREE.PlaneGeometry(16, 26);
-            const ceilMat = new THREE.MeshBasicMaterial({ map: ceilTex });
-            const ceiling = new THREE.Mesh(ceilGeo, ceilMat);
-            ceiling.rotation.x = Math.PI / 2;
-            ceiling.position.y = 4.49;
-            scene.add(ceiling);
-            
-            const boardGeo = new THREE.PlaneGeometry(5, 2.5);
-            boardTexture = new THREE.CanvasTexture(boardCanvas);
-            boardMaterial = new THREE.MeshBasicMaterial({ map: boardTexture });
-            const board = new THREE.Mesh(boardGeo, boardMaterial);
-            board.position.set(0, 2.5, -12.9); 
-            scene.add(board);
-
-            const clockMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32), new THREE.MeshStandardMaterial({color: 0x333333}));
-            clockMesh.rotation.x = Math.PI / 2;
-            clockMesh.position.set(-4, 3, -12.9);
-            scene.add(clockMesh);
-            const clockFace = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.06, 32), new THREE.MeshBasicMaterial({color: 0xffffff}));
-            clockFace.rotation.x = Math.PI / 2;
-            clockFace.position.set(-4, 3, -12.9);
-            scene.add(clockFace);
-
-            const xPositions = [-4.5, -1.5, 1.5, 4.5];
-            const zPositions = [-6, -3, 0, 3, 6];
-            
-            xPositions.forEach(x => {
-                zPositions.forEach(z => {
-                    createLabDesk(x, z);
-                    createChair(x, z + 0.6);
+        /* * COMPONENT: ACTION BUTTON
+         * Handles VR laser and desktop clicks for spatial UI.
+         */
+        AFRAME.registerComponent('action-button', {
+            schema: { action: {type: 'string'} },
+            init: function () {
+                const originalColor = this.el.getAttribute('color');
+                this.el.addEventListener('click', () => {
+                    if(this.data.action === 'next') this.el.sceneEl.emit('next-level');
+                    if(this.data.action === 'reset') this.el.sceneEl.emit('reset-level');
                 });
-            });
-
-            createLabDesk(0, -9, true);
-            createChair(0, -9.6, Math.PI); 
-
-            for(let i=0; i<25; i++) {
-                spawnScatteredPart();
+                this.el.addEventListener('mouseenter', () => this.el.setAttribute('color', '#aaaaaa'));
+                this.el.addEventListener('mouseleave', () => this.el.setAttribute('color', originalColor));
             }
-        }
+        });
 
-        function createLabDesk(x, z, isInstructor = false) {
-            const group = new THREE.Group();
-            const topGeo = new THREE.BoxGeometry(1.6, 0.05, 0.8);
-            const deskTop = new THREE.Mesh(topGeo, deskTopMat);
-            deskTop.position.set(0, 0.75, 0);
-            deskTop.castShadow = true;
-            deskTop.receiveShadow = true;
-            group.add(deskTop);
+        /* * COMPONENT: MAZE GENERATOR */
+        AFRAME.registerComponent('maze-generator', {
+            init: function () {
+                this.buildLevel();
 
-            const legPillarGeo = new THREE.BoxGeometry(0.05, 0.75, 0.05);
-            const legBaseGeo = new THREE.BoxGeometry(0.05, 0.05, 0.7);
-            [-0.7, 0.7].forEach(posX => {
-                const pillar = new THREE.Mesh(legPillarGeo, deskLegMat);
-                pillar.position.set(posX, 0.375, 0);
-                pillar.castShadow = true;
-                group.add(pillar);
-                
-                const base = new THREE.Mesh(legBaseGeo, deskLegMat);
-                base.position.set(posX, 0.025, 0);
-                base.castShadow = true;
-                group.add(base);
-            });
+                // Listen for level progression events
+                this.el.sceneEl.addEventListener('next-level', () => {
+                    window.currentLevelIndex++;
+                    if (window.currentLevelIndex >= mazeLevels.length) {
+                        window.currentLevelIndex = 0; // Loop back to start if finished
+                    }
+                    this.buildLevel();
+                });
 
-            const pcGeo = new THREE.BoxGeometry(0.22, 0.45, 0.45);
-            const pc = new THREE.Mesh(pcGeo, pcMat);
-            pc.position.set(-0.6, 1.0, 0);
-            pc.castShadow = true;
-            group.add(pc);
+                this.el.sceneEl.addEventListener('reset-level', () => {
+                    this.buildLevel();
+                });
+            },
             
-            const pwr = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.01), new THREE.MeshBasicMaterial({color: 0xff0000}));
-            pwr.rotation.x = Math.PI/2;
-            pwr.position.set(-0.6, 1.1, 0.23);
-            group.add(pwr);
-
-            const monitorBase = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.02, 0.2), pcMat);
-            monitorBase.position.set(0.1, 0.78, -0.2);
-            group.add(monitorBase);
-            
-            const monitorStand = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.2), pcMat);
-            monitorStand.position.set(0.1, 0.88, -0.2);
-            group.add(monitorStand);
-            
-            const monitorScreenGeo = new THREE.BoxGeometry(0.65, 0.38, 0.04);
-            const monitorScreenMatArr = [pcMat, pcMat, pcMat, pcMat, screenMat, pcMat];
-            const monitor = new THREE.Mesh(monitorScreenGeo, monitorScreenMatArr);
-            monitor.position.set(0.1, 1.05, -0.15);
-            monitor.rotation.x = -0.05;
-            group.add(monitor);
-            
-            const kb = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.015, 0.18), pcMat);
-            kb.position.set(0.1, 0.78, 0.2);
-            group.add(kb);
-            const mouse = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.1), pcMat);
-            mouse.position.set(0.45, 0.78, 0.2);
-            group.add(mouse);
-
-            if (isInstructor) group.rotation.y = Math.PI; 
-            group.position.set(x, 0, z);
-            scene.add(group);
-        }
-
-        function createChair(x, z, rotation = 0) {
-            const group = new THREE.Group();
-            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4), deskLegMat);
-            stem.position.set(0, 0.2, 0);
-            group.add(stem);
-            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.5), pcMat);
-            seat.position.set(0, 0.42, 0);
-            seat.castShadow = true;
-            group.add(seat);
-            const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.4, 0.05), pcMat);
-            backrest.position.set(0, 0.75, 0.24);
-            backrest.castShadow = true;
-            group.add(backrest);
-            group.position.set(x, 0, z);
-            group.rotation.y = rotation;
-            scene.add(group);
-        }
-
-        function createCPUModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.3), new THREE.MeshStandardMaterial({ color: 0x225522 })));
-            const top = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.025, 0.2), new THREE.MeshStandardMaterial({ color: 0xcccccc }));
-            top.position.y = 0.02; group.add(top);
-            const pins = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.005, 0.28), new THREE.MeshStandardMaterial({ color: 0xd4af37 }));
-            pins.position.y = -0.01; group.add(pins);
-            return group;
-        }
-
-        function createMotherboardModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.02, 1.2), new THREE.MeshStandardMaterial({ color: 0x111111 })));
-            const socket = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.03, 0.35), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-            socket.position.set(0, 0.02, -0.2); group.add(socket);
-            return group;
-        }
-
-        function createRAMModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.15, 0.02), new THREE.MeshStandardMaterial({ color: 0x116611 })));
-            const pins = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.025), new THREE.MeshStandardMaterial({ color: 0xd4af37 }));
-            pins.position.y = -0.07; group.add(pins);
-            return group;
-        }
-
-        function createGPUModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.05), new THREE.MeshStandardMaterial({ color: 0x222222 })));
-            const fan1 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.02), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-            fan1.position.set(-0.18, 0, 0.16); fan1.rotation.x = Math.PI / 2; fan1.userData = { isFan: true }; group.add(fan1);
-            const fan2 = fan1.clone(); fan2.position.set(0.18, 0, 0.16); fan2.userData = { isFan: true }; group.add(fan2);
-            return group;
-        }
-
-        function createNVMeModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.015), new THREE.MeshStandardMaterial({ color: 0x002200 })));
-            return group;
-        }
-
-        function createHDDModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.15), new THREE.MeshStandardMaterial({ color: 0x888888 })));
-            return group;
-        }
-
-        function createPSUModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), new THREE.MeshStandardMaterial({ color: 0x1a1a1a })));
-            const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.05), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-            fan.position.set(0, 0.3, 0); fan.userData = { isFan: true }; group.add(fan);
-            return group;
-        }
-
-        function createCoolerModel() {
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), new THREE.MeshStandardMaterial({ color: 0xdddddd })));
-            const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.06), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-            fan.position.set(0, 0.05, 0.15); fan.rotation.x = Math.PI / 2; fan.userData = { isFan: true }; group.add(fan);
-            return group;
-        }
-
-        function spawnScatteredPart() {
-            const types = ["CPU", "RAM", "GPU", "Motherboard", "NVMe", "HDD", "PSU", "Cooler"];
-            const type = types[Math.floor(Math.random() * types.length)];
-            let mesh;
-            if (type === "CPU") mesh = createCPUModel();
-            else if (type === "RAM") mesh = createRAMModel();
-            else if (type === "GPU") mesh = createGPUModel();
-            else if (type === "Motherboard") mesh = createMotherboardModel();
-            else if (type === "NVMe") mesh = createNVMeModel();
-            else if (type === "HDD") mesh = createHDDModel();
-            else if (type === "PSU") mesh = createPSUModel();
-            else if (type === "Cooler") mesh = createCoolerModel();
-            
-            mesh.position.set((Math.random() - 0.5) * 14, 0.1, (Math.random() - 0.5) * 22);
-            mesh.rotation.y = Math.random() * Math.PI * 2;
-            
-            // Add gravity tracking properties
-            mesh.userData = { 
-                isHardware: true, 
-                type: type, 
-                velocity: new THREE.Vector3(0, 0, 0) 
-            };
-
-            if (!sharedInfoMat) {
-                const infoCanvas = document.createElement('canvas');
-                infoCanvas.width = 128; infoCanvas.height = 64;
-                const ictx = infoCanvas.getContext('2d');
-                ictx.fillStyle = '#2196F3'; ictx.fillRect(0,0,128,64);
-                ictx.fillStyle = '#ffffff'; ictx.font = 'bold 32px Arial'; ictx.textAlign = 'center'; ictx.fillText("INFO", 64, 44);
-                sharedInfoMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(infoCanvas) });
-            }
-            
-            const infoBtn = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.05), sharedInfoMat);
-            infoBtn.position.set(0, 0.4, 0); 
-            infoBtn.userData = { isPartInfoButton: true, type: type };
-            mesh.add(infoBtn);
-            
-            scene.add(mesh);
-            interactableObjects.push(mesh);
-        }
-
-        function renderBoard(title, textLines, bgColor) {
-            boardCtx.fillStyle = bgColor;
-            boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
-            boardCtx.strokeStyle = '#555'; boardCtx.lineWidth = 10; boardCtx.strokeRect(5, 5, 1014, 502);
-            boardCtx.fillStyle = '#FFFFFF'; boardCtx.font = 'bold 45px "Segoe UI"'; boardCtx.textAlign = 'center'; boardCtx.fillText(title, 512, 80); 
-            boardCtx.beginPath(); boardCtx.moveTo(100, 110); boardCtx.lineTo(924, 110); boardCtx.strokeStyle = '#FFFFFF'; boardCtx.lineWidth = 3; boardCtx.stroke();
-            boardCtx.font = '32px "Segoe UI"'; let yPos = 180;
-            textLines.forEach(line => { boardCtx.fillText(line, 512, yPos); yPos += 50; });
-            boardTexture.needsUpdate = true;
-        }
-
-        function updateQuizUI() {
-            if (!isQuizMode) return;
-            renderBoard("QUIZ MODE", quizQuestions[currentQuestionIndex].text, "#4A148C");
-            popupGroup.visible = true;
-        }
-
-        // --- VR Grip Logic (Hold to Grab & Drop) ---
-        function onSqueezeStart(event) {
-            const controller = event.target;
-            const tempMatrix = new THREE.Matrix4().extractRotation(controller.matrixWorld);
-            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-            
-            const intersects = raycaster.intersectObjects(scene.children, true);
-            let hitObj = null;
-            if (intersects.length > 0) {
-                let obj = intersects[0].object;
-                while (obj.parent && obj.parent !== scene && obj.parent !== camera && obj.parent !== popupGroup) {
-                    if (obj.userData.isHardware) break;
-                    obj = obj.parent;
+            buildLevel: function() {
+                const container = this.el;
+                // Clear out previous level geometry
+                while (container.firstChild) {
+                    container.removeChild(container.firstChild);
                 }
-                if (obj.userData && obj.userData.isHardware) hitObj = obj;
-            }
 
-            if (hitObj) {
-                // Release old object if any
-                if (grabbedObject) releaseGrabbedObject();
+                const levelData = mazeLevels[window.currentLevelIndex];
+                const mazeMap = levelData.map;
+                const blockSize = 3; 
+                const wallHeight = 3.5;
+                const rig = document.getElementById('rig');
+                const playerCam = document.getElementById('player');
 
-                // Attach to hand directly to follow physical hand movement
-                grabbedObject = hitObj;
-                controller.attach(grabbedObject);
-                grabbedObject.userData.velocity.set(0, 0, 0); // Zero out gravity
-            }
-        }
-
-        function onSqueezeEnd(event) {
-            const controller = event.target;
-            // Release Object (Drop into physics gravity)
-            if (grabbedObject && grabbedObject.parent === controller) {
-                scene.attach(grabbedObject);
-                grabbedObject = null;
-            }
-        }
-
-        // --- VR Trigger Logic (Click to View Info / UI) ---
-        function onSelectStart(event) {
-            const controller = event.target;
-            const tempMatrix = new THREE.Matrix4().extractRotation(controller.matrixWorld);
-            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-            
-            const intersects = raycaster.intersectObjects(scene.children, true);
-            let hitObj = null;
-            if (intersects.length > 0) {
-                let obj = intersects[0].object;
-                while (obj.parent && obj.parent !== scene && obj.parent !== camera && obj.parent !== popupGroup) {
-                    if (obj.userData.isHardware || obj.userData.isQuizButton || obj.userData.isPartInfoButton || obj.userData.isCloseButton) break;
-                    obj = obj.parent;
+                // Clear cached walls so physics re-calculates for the new map
+                if (playerCam.components['simple-collider']) {
+                    playerCam.components['simple-collider'].walls = [];
                 }
-                hitObj = obj;
-            }
 
-            if (hitObj) {
-                if (hitObj.userData.isCloseButton) { popupGroup.visible = false; return; }
-                if (hitObj.userData.isQuizButton) { isQuizMode = true; currentQuestionIndex = 0; updateQuizUI(); return; }
+                for (let row = 0; row < mazeMap.length; row++) {
+                    for (let col = 0; col < mazeMap[row].length; col++) {
+                        const cell = mazeMap[row][col];
+                        const x = (col - mazeMap[row].length / 2) * blockSize;
+                        const z = (row - mazeMap.length / 2) * blockSize;
+
+                        if (cell === 1) {
+                            let wall = document.createElement('a-box');
+                            wall.setAttribute('position', `${x} ${wallHeight/2} ${z}`);
+                            wall.setAttribute('width', blockSize);
+                            wall.setAttribute('height', wallHeight);
+                            wall.setAttribute('depth', blockSize);
+                            wall.setAttribute('color', '#2b5b84'); 
+                            wall.setAttribute('roughness', '0.8');
+                            wall.setAttribute('class', 'collidable'); 
+                            container.appendChild(wall);
+                        } 
+                        else if (cell === 2) {
+                            let goal = document.createElement('a-entity');
+                            goal.setAttribute('position', `${x} 1.5 ${z}`);
+                            goal.setAttribute('id', 'maze-goal');
+                            
+                            let shape = document.createElement('a-torus-knot');
+                            shape.setAttribute('color', '#FFD700');
+                            shape.setAttribute('radius', '0.5');
+                            shape.setAttribute('radius-tubular', '0.1');
+                            shape.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear');
+                            
+                            let light = document.createElement('a-light');
+                            light.setAttribute('type', 'point');
+                            light.setAttribute('color', '#FFD700');
+                            light.setAttribute('intensity', '2');
+                            light.setAttribute('distance', '5');
+
+                            goal.appendChild(shape);
+                            goal.appendChild(light);
+                            container.appendChild(goal);
+                        }
+                        else if (cell === 3) {
+                            // Move the entire VR Rig, set specific level rotation to look down paths
+                            rig.setAttribute('position', `${x} 0 ${z}`);
+                            rig.setAttribute('rotation', levelData.rot);
+                            
+                            // Reset local camera offsets that accumulate via WASD
+                            playerCam.setAttribute('position', '0 1.6 0');
+                        }
+                        else if (cell === 4) {
+                            // Construct Spatial Control Panel
+                            let panel = document.createElement('a-entity');
+                            panel.setAttribute('position', `${x} 1.5 ${z}`);
+                            
+                            let bg = document.createElement('a-plane');
+                            bg.setAttribute('width', '1.6'); bg.setAttribute('height', '1.2'); bg.setAttribute('color', '#222');
+                            panel.appendChild(bg);
+
+                            let title = document.createElement('a-text');
+                            title.setAttribute('value', 'SYSTEM MENU'); title.setAttribute('align', 'center'); 
+                            title.setAttribute('position', '0 0.4 0.05'); title.setAttribute('color', '#FFF');
+                            panel.appendChild(title);
+
+                            // Next Level Button
+                            let btnNext = document.createElement('a-box');
+                            btnNext.setAttribute('position', '0 0.1 0.05'); btnNext.setAttribute('depth', '0.1'); 
+                            btnNext.setAttribute('width', '1.2'); btnNext.setAttribute('height', '0.25');
+                            btnNext.setAttribute('color', '#4CAF50'); btnNext.setAttribute('class', 'clickable');
+                            btnNext.setAttribute('action-button', 'action: next');
+                            let txtNext = document.createElement('a-text');
+                            txtNext.setAttribute('value', 'Skip Level'); txtNext.setAttribute('align', 'center'); txtNext.setAttribute('position', '0 0 0.06');
+                            btnNext.appendChild(txtNext);
+                            panel.appendChild(btnNext);
+
+                            // Restart Button
+                            let btnReset = document.createElement('a-box');
+                            btnReset.setAttribute('position', '0 -0.25 0.05'); btnReset.setAttribute('depth', '0.1'); 
+                            btnReset.setAttribute('width', '1.2'); btnReset.setAttribute('height', '0.25');
+                            btnReset.setAttribute('color', '#f44336'); btnReset.setAttribute('class', 'clickable');
+                            btnReset.setAttribute('action-button', 'action: reset');
+                            let txtReset = document.createElement('a-text');
+                            txtReset.setAttribute('value', 'Reset Level'); txtReset.setAttribute('align', 'center'); txtReset.setAttribute('position', '0 0 0.06');
+                            btnReset.appendChild(txtReset);
+                            panel.appendChild(btnReset);
+
+                            container.appendChild(panel);
+                        }
+                    }
+                }
+            }
+        });
+
+        /* * COMPONENT: CUSTOM COLLISION DETECTION */
+        AFRAME.registerComponent('simple-collider', {
+            schema: { radius: {type: 'number', default: 0.5}, wallSize: {type: 'number', default: 3} },
+            tick: function () {
+                if (!this.walls || this.walls.length === 0) {
+                    this.walls = document.querySelectorAll('.collidable');
+                }
                 
-                if (hitObj.userData.isPartInfoButton || hitObj.userData.isHardware) {
-                    const type = hitObj.userData.type;
-                    if (isQuizMode && hitObj.userData.isHardware) {
-                        if (quizQuestions[currentQuestionIndex].answer === type) {
-                            currentQuestionIndex++;
-                            if (currentQuestionIndex >= quizQuestions.length) {
-                                renderBoard("Quiz Complete!", ["Excellent work!", "Select Quiz again to restart."], "#2E7D32"); isQuizMode = false;
-                            } else {
-                                renderBoard("Correct!", ["Good job.", "Prepare for next question..."], "#2E7D32"); setTimeout(updateQuizUI, 1500);
-                            }
+                const el = this.el; // The Camera
+                const rig = document.getElementById('rig'); // The VR Rig wrapper
+                
+                // Get absolute world position for accurate VR room-scale calculations
+                const pos = new THREE.Vector3();
+                el.object3D.getWorldPosition(pos);
+                
+                const halfWall = this.data.wallSize / 2;
+                const playerR = this.data.radius;
+
+                this.walls.forEach((wall) => {
+                    const wallPos = new THREE.Vector3();
+                    wall.object3D.getWorldPosition(wallPos);
+                    
+                    const dx = pos.x - wallPos.x;
+                    const dz = pos.z - wallPos.z;
+
+                    if (Math.abs(dx) < (halfWall + playerR) && Math.abs(dz) < (halfWall + playerR)) {
+                        const overlapX = (halfWall + playerR) - Math.abs(dx);
+                        const overlapZ = (halfWall + playerR) - Math.abs(dz);
+
+                        // Push the RIG out to prevent fighting with WebXR / WASD controls
+                        if (overlapX < overlapZ) {
+                            rig.object3D.position.x += overlapX * Math.sign(dx);
                         } else {
-                            renderBoard("Incorrect", ["Try again."], "#C62828"); setTimeout(updateQuizUI, 1500);
-                        }
-                    } else {
-                        // Display the informational popup
-                        const info = hardwareInfo[type];
-                        renderBoard(info.title, info.desc, "#112233");
-                        popupGroup.visible = true;
-                    }
-                    return; // Just viewing info, do NOT grab with trigger
-                }
-            }
-
-            // Handle Teleport targeting if no interactive object hit
-            if (intersects.length > 0) {
-                const floorIntersect = intersects.find(i => i.object.userData && i.object.userData.isFloor);
-                if (floorIntersect) controller.userData.isTeleporting = true;
-            }
-        }
-
-        function onSelectEnd(event) {
-            const controller = event.target;
-            
-            // Execute Teleport
-            if (controller.userData.isTeleporting) {
-                controller.userData.isTeleporting = false;
-                if (teleportMarker.visible) {
-                    const offset = new THREE.Vector3().subVectors(teleportMarker.position, cameraGroup.position);
-                    offset.y = 0; cameraGroup.position.add(offset); teleportMarker.visible = false;
-                }
-            }
-        }
-
-        // Desktop Controls
-        function onKeyDown(e) { keys[e.key.toLowerCase()] = true; }
-        function onKeyUp(e) { keys[e.key.toLowerCase()] = false; }
-        
-        function onMouseDown(e) {
-            if (renderer.xr.isPresenting) return;
-            previousMousePosition = { x: e.clientX, y: e.clientY }; dragDistance = 0; clickedUI = false;
-            pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(scene.children, true);
-            
-            if (intersects.length > 0) {
-                let obj = intersects[0].object;
-                while (obj.parent && obj.parent !== scene && obj.parent !== camera && obj.parent !== popupGroup) {
-                    if (obj.userData.isHardware || obj.userData.isQuizButton || obj.userData.isPartInfoButton || obj.userData.isCloseButton) break;
-                    obj = obj.parent;
-                }
-                
-                if (obj.userData.isCloseButton) { popupGroup.visible = false; clickedUI = true; return; }
-                if (obj.userData.isPartInfoButton) {
-                    const info = hardwareInfo[obj.userData.type];
-                    renderBoard(info.title, info.desc, "#112233");
-                    popupGroup.visible = true; clickedUI = true; return;
-                }
-                if (obj.userData.isQuizButton) { isQuizMode = true; currentQuestionIndex = 0; updateQuizUI(); clickedUI = true; return; }
-                
-                if (obj.userData.isHardware) { 
-                    grabbedObject = obj;
-                    camera.attach(grabbedObject);
-                    grabbedObject.position.set(0, 0, -1); // Hold in front of camera
-                    grabbedObject.userData.velocity.set(0, 0, 0);
-                    isRotatingObject = true; 
-                    
-                    const info = hardwareInfo[obj.userData.type];
-                    renderBoard(info.title, info.desc, "#112233");
-                    popupGroup.visible = true;
-                    return; 
-                }
-                isDraggingCamera = true;
-            } else {
-                isDraggingCamera = true;
-            }
-        }
-
-        function onMouseMove(e) {
-            if (renderer.xr.isPresenting) return;
-            const deltaX = e.clientX - previousMousePosition.x;
-            const deltaY = e.clientY - previousMousePosition.y;
-            if (isDraggingCamera || isRotatingObject) dragDistance += Math.abs(deltaX) + Math.abs(deltaY);
-            
-            // Desktop Object Rotation
-            if (isRotatingObject && grabbedObject) { 
-                grabbedObject.rotation.y += deltaX * 0.01; 
-                grabbedObject.rotation.x += deltaY * 0.01; 
-            }
-            // Desktop Camera Rotation
-            else if (isDraggingCamera) {
-                cameraAngles.theta -= deltaX * 0.005; cameraAngles.phi -= deltaY * 0.005;
-                cameraAngles.phi = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraAngles.phi));
-            }
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        }
-
-        function onMouseUp() { 
-            // Desktop Drop Object
-            if (grabbedObject && !renderer.xr.isPresenting) {
-                scene.attach(grabbedObject);
-                grabbedObject = null;
-            }
-            isDraggingCamera = false; 
-            isRotatingObject = false; 
-        }
-        
-        function onMouseWheel(e) { if (grabbedObject) { e.preventDefault(); grabbedObject.scale.multiplyScalar(Math.max(0.8, Math.min(1.2, 1 - (e.deltaY * 0.001)))); grabbedObject.scale.clampScalar(0.1, 10.0); } }
-        function onTouchStart(e) { if (e.touches && e.touches.length > 0) onMouseDown(e.touches[0]); }
-        function onTouchMove(e) { if (e.touches && e.touches.length > 0) onMouseMove(e.touches[0]); }
-        function onTouchEnd(e) { onMouseUp(); }
-        function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
-
-        function animate() {
-            const delta = clock.getDelta();
-
-            // Desktop Locomotion
-            if (!renderer.xr.isPresenting) {
-                camera.rotation.order = 'YXZ'; camera.rotation.y = cameraAngles.theta; camera.rotation.x = cameraAngles.phi;
-                playerVelocity.set(0,0,0);
-                const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
-                const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
-                if (keys.w) playerVelocity.addScaledVector(dir, 5 * delta);
-                if (keys.s) playerVelocity.addScaledVector(dir, -5 * delta);
-                if (keys.a) playerVelocity.addScaledVector(right, -5 * delta);
-                if (keys.d) playerVelocity.addScaledVector(right, 5 * delta);
-                cameraGroup.position.add(playerVelocity);
-                cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
-                cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
-            } else {
-                // VR Thumbstick Locomotion (Comfort/Sickness Improvements)
-                const session = renderer.xr.getSession();
-                if (session && session.inputSources) {
-                    for (const source of session.inputSources) {
-                        if (source.gamepad && source.gamepad.axes) {
-                            const axes = source.gamepad.axes; 
-                            
-                            const xAxis = axes.length > 2 ? axes[2] : axes[0];
-                            const yAxis = axes.length > 3 ? axes[3] : axes[1];
-                            
-                            // Left Controller (Smooth Locomotion & Scaling)
-                            if (source.handedness === 'left') {
-                                const moveDir = new THREE.Vector3(); 
-                                camera.getWorldDirection(moveDir); 
-                                moveDir.y = 0; moveDir.normalize();
-                                const moveRight = new THREE.Vector3().crossVectors(moveDir, camera.up).normalize();
-                                
-                                // Reduced movement speed to combat motion sickness (2.0 instead of 3.5)
-                                if (Math.abs(yAxis) > 0.2) cameraGroup.position.addScaledVector(moveDir, -yAxis * 2.0 * delta);
-                                if (Math.abs(xAxis) > 0.2) cameraGroup.position.addScaledVector(moveRight, xAxis * 2.0 * delta);
-                                
-                                // Scale grabbed object using up/down
-                                if (grabbedObject && Math.abs(yAxis) > 0.1) {
-                                    const scaleAmount = yAxis > 0 ? 0.98 : 1.02;
-                                    grabbedObject.scale.multiplyScalar(scaleAmount).clampScalar(0.1, 10.0);
-                                }
-                            }
-                            
-                            // Right Controller (Snap Turning for comfort + Object Rotation)
-                            if (source.handedness === 'right') {
-                                if (!grabbedObject) {
-                                    // Snap Turning logic (Prevents motion sickness nausea)
-                                    if (Math.abs(xAxis) > 0.5) {
-                                        if (rightSnapTurnReady) {
-                                            cameraGroup.rotation.y -= Math.sign(xAxis) * (Math.PI / 6); // Snap 30 degrees
-                                            rightSnapTurnReady = false;
-                                        }
-                                    } else {
-                                        rightSnapTurnReady = true; // Reset when stick is released
-                                    }
-                                } else {
-                                    // Rotate the object being held smoothly
-                                    if (Math.abs(xAxis) > 0.1) grabbedObject.rotation.y += xAxis * 2.0 * delta;
-                                    if (Math.abs(yAxis) > 0.1) grabbedObject.rotation.x += yAxis * 2.0 * delta;
-                                }
-                            }
-                        }
-                    }
-                }
-                cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
-                cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
-            }
-
-            // Object Updates (Fans & Gravity)
-            interactableObjects.forEach(obj => {
-                if (obj.userData && obj.userData.isHardware) {
-                    // Spin Fans (Reduced speed to prevent strobing/flashing effects)
-                    obj.traverse(c => { if (c.userData.isFan) c.rotation.y += 1.5 * delta; });
-                    
-                    // Gravity Physics
-                    if (obj !== grabbedObject) {
-                        if (!obj.userData.velocity) obj.userData.velocity = new THREE.Vector3(0, 0, 0);
-                        
-                        // Accelerate downwards if above floor
-                        if (obj.position.y > 0.1) {
-                            obj.userData.velocity.y -= 9.8 * delta; 
-                            obj.position.y += obj.userData.velocity.y * delta;
-                        }
-                        
-                        // Floor Collision
-                        if (obj.position.y <= 0.1) {
-                            obj.position.y = 0.1;
-                            obj.userData.velocity.set(0, 0, 0);
-                        }
-                    }
-                }
-                
-                // Billboard Info buttons
-                if (obj.userData && obj.userData.isPartInfoButton) {
-                    obj.lookAt(camera.position);
-                }
-            });
-
-            // Handle Teleport marker aiming
-            if (renderer.xr.isPresenting) {
-                let isAimingTeleport = false;
-                [controller1, controller2].forEach(c => {
-                    if (c.visible && c.userData.isTeleporting) {
-                        const m = new THREE.Matrix4().extractRotation(c.matrixWorld);
-                        raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
-                        raycaster.ray.direction.set(0, 0, -1).applyMatrix4(m);
-                        const intersects = raycaster.intersectObjects(scene.children, true);
-                        const fi = intersects.find(i => i.object.userData && i.object.userData.isFloor);
-                        if (fi) { 
-                            teleportMarker.position.copy(fi.point); 
-                            teleportMarker.position.y += 0.01; 
-                            teleportMarker.visible = true; 
-                            isAimingTeleport = true; 
+                            rig.object3D.position.z += overlapZ * Math.sign(dz);
                         }
                     }
                 });
-                if (!isAimingTeleport) teleportMarker.visible = false;
             }
-            renderer.render(scene, camera);
-        }
+        });
+
+        /* * COMPONENT: WIN CONDITION CHECKER */
+        AFRAME.registerComponent('win-condition', {
+            init: function() { this.won = false; },
+            tick: function () {
+                if (this.won) return;
+
+                const goal = document.getElementById('maze-goal');
+                if (!goal) return;
+
+                const playerPos = new THREE.Vector3();
+                this.el.object3D.getWorldPosition(playerPos);
+                
+                const goalPos = new THREE.Vector3();
+                goal.object3D.getWorldPosition(goalPos);
+
+                const distance = playerPos.distanceTo(goalPos);
+
+                if (distance < 1.5) {
+                    this.won = true;
+                    
+                    const winText = document.getElementById('win-text');
+                    winText.setAttribute('visible', 'true');
+                    this.playWinSound();
+
+                    // Wait 3 seconds, hide text, and progress to next level
+                    setTimeout(() => {
+                        winText.setAttribute('visible', 'false');
+                        this.el.sceneEl.emit('next-level');
+                        this.won = false; // Reset block for new level
+                    }, 3000);
+                }
+            },
+            playWinSound: function() {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); 
+                oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.5); 
+                
+                gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1);
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 1);
+            }
+        });
+
+        /* * COMPONENT: VR THUMBSTICK MOVEMENT
+         * Allows players using Meta Quest or other VR headsets to move using the joystick.
+         */
+        AFRAME.registerComponent('vr-thumbstick-movement', {
+            schema: { speed: { default: 0.08 } },
+            init: function () {
+                this.moveX = 0;
+                this.moveZ = 0;
+                this.rig = document.getElementById('rig');
+                this.camera = document.getElementById('player');
+
+                // Listen for thumbstick movement from VR controllers
+                this.el.addEventListener('thumbstickmoved', (evt) => {
+                    this.moveX = evt.detail.x;
+                    this.moveZ = evt.detail.y;
+                });
+            },
+            tick: function () {
+                // Apply a small deadzone to prevent stick drift
+                if (Math.abs(this.moveX) < 0.1 && Math.abs(this.moveZ) < 0.1) return;
+
+                // Get camera's current Y rotation (where the player is looking)
+                const camRot = this.camera.object3D.rotation;
+                
+                const dx = this.moveX * this.data.speed;
+                const dz = this.moveZ * this.data.speed;
+
+                // Move relative to head direction
+                const rotatedX = dx * Math.cos(camRot.y) + dz * Math.sin(camRot.y);
+                const rotatedZ = -dx * Math.sin(camRot.y) + dz * Math.cos(camRot.y);
+
+                this.rig.object3D.position.x += rotatedX;
+                this.rig.object3D.position.z += rotatedZ;
+            }
+        });
     </script>
+</head>
+<body>
+    <a-scene environment="preset: dream; skyType: atmosphere; lighting: none">
+        
+        <a-light type="ambient" color="#ffffff" intensity="0.7"></a-light>
+        <a-light type="directional" position=" -1 2 1" intensity="0.5" castShadow="true"></a-light>
+
+        <a-entity id="maze-container" maze-generator></a-entity>
+
+        <!-- VR RIG PATTERN: Essential for proper spatial movement and teleportation -->
+        <a-entity id="rig" position="0 0 0">
+            
+            <a-camera id="player" simple-collider win-condition position="0 1.6 0" wasd-controls="acceleration: 15" look-controls>
+                
+                <!-- Win State HUD attached directly to face -->
+                <a-entity 
+                    id="win-text" visible="false" position="0 0 -1.5"
+                    geometry="primitive: plane; width: 2; height: 0.8"
+                    material="color: #000000; opacity: 0.8; transparent: true; shader: flat"
+                    text="value: LEVEL COMPLETE!\nGreat Job!; align: center; color: #FFD700; width: 4; font: mozillavr">
+                </a-entity>
+
+                <!-- Desktop/Gaze Cursor for clicking buttons without VR controllers -->
+                <a-cursor raycaster="objects: .clickable" color="#FFF" scale="0.8 0.8 0.8"
+                          animation__click="property: scale; startEvents: click; easing: easeInCubic; dur: 150; from: 0.1 0.1 0.1; to: 0.8 0.8 0.8">
+                </a-cursor>
+
+            </a-camera>
+
+            <!-- Real VR Hand Controllers with Thumbstick Locomotion added to the Left Hand -->
+            <a-entity laser-controls="hand: left" oculus-touch-controls="hand: left" vr-thumbstick-movement raycaster="objects: .clickable; far: 5" line="color: #00ff00; opacity: 0.6"></a-entity>
+            <a-entity laser-controls="hand: right" oculus-touch-controls="hand: right" raycaster="objects: .clickable; far: 5" line="color: #00ff00; opacity: 0.6"></a-entity>
+
+        </a-entity>
+
+    </a-scene>
 </body>
 </html>
