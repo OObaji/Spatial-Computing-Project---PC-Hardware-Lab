@@ -52,8 +52,8 @@
 
     <div id="info-overlay">
         <h1>LHU - PC Hardware VR Lab</h1>
-        <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag empty space to look around. Click INFO to read. <strong>Click components to grab, drag to rotate, scroll wheel to resize. Click again to drop.</strong></p>
-        <p><strong>VR Headset:</strong> Point at floor and hold trigger to teleport. Point at INFO to read. <strong>Click trigger to grab items, use thumbstick to resize. Click trigger again to drop.</strong></p>
+        <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag to look. <strong>Hold click on component to grab, drag to rotate. Release to drop.</strong></p>
+        <p><strong>VR Headset:</strong> Left Stick to Walk. Right Stick to Turn. <strong>Hold Trigger to grab item and twist your hand to rotate it. Release to drop.</strong></p>
     </div>
 
     <script>
@@ -68,7 +68,6 @@
         const keys = { w: false, a: false, s: false, d: false };
         let teleportMarker;
 
-        let intersected = null;
         let grabbedObject = null;
         const interactableObjects = [];
         let sharedInfoMat = null;
@@ -143,9 +142,9 @@
         let clickedUI = false;
         let previousMousePosition = { x: 0, y: 0 };
 
-        const deskTopMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-        const deskLegMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.4 });
-        const pcMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.7 });
+        const deskTopMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const deskLegMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        const pcMat = new THREE.MeshStandardMaterial({ color: 0x151515 });
         let screenMat; 
 
         // --- Robust VR Button Utility ---
@@ -239,10 +238,10 @@
             document.body.appendChild(renderer.domElement);
             document.body.appendChild(VRButton.createButton(renderer));
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); 
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Increased to maintain consistent base color
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7); 
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4); // Decreased to soften stark shadows
             directionalLight.position.set(2, 10, 5);
             directionalLight.castShadow = true;
             directionalLight.shadow.mapSize.width = 2048;
@@ -286,15 +285,17 @@
             controller1 = renderer.xr.getController(0);
             controller1.addEventListener('selectstart', onSelectStart);
             controller1.addEventListener('selectend', onSelectEnd);
+            controller1.add(createVRHand()); // Attach hand model
             cameraGroup.add(controller1);
 
             controller2 = renderer.xr.getController(1);
             controller2.addEventListener('selectstart', onSelectStart);
             controller2.addEventListener('selectend', onSelectEnd);
+            controller2.add(createVRHand()); // Attach hand model
             cameraGroup.add(controller2);
 
             const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -5)]);
-            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 }); // Softened line
             controller1.add(new THREE.Line(lineGeometry, lineMaterial));
             controller2.add(new THREE.Line(lineGeometry, lineMaterial));
 
@@ -312,6 +313,34 @@
             document.addEventListener('touchend', onTouchEnd);
 
             renderBoard("Liverpool Hope University", ["Welcome to the Hardware Lab.", "Select a component to learn about it,", "or start the Quiz to test your knowledge."], "#222233");
+        }
+
+        // --- Procedural VR Hands ---
+        function createVRHand() {
+            const handGroup = new THREE.Group();
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0ac69 });
+            
+            // Palm
+            const palm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.08), skinMat);
+            handGroup.add(palm);
+
+            // Thumb
+            const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.04), skinMat);
+            thumb.position.set(-0.04, 0, -0.02);
+            thumb.rotation.y = -Math.PI / 4;
+            handGroup.add(thumb);
+
+            // Fingers
+            const fingerGeo = new THREE.BoxGeometry(0.018, 0.018, 0.05);
+            for(let i=0; i<3; i++) {
+                const finger = new THREE.Mesh(fingerGeo, skinMat);
+                finger.position.set(-0.025 + i * 0.025, 0, -0.06);
+                handGroup.add(finger);
+            }
+
+            handGroup.position.set(0, 0, -0.05);
+            handGroup.rotation.x = Math.PI / 8; // Angled down slightly to match grip
+            return handGroup;
         }
 
         function buildEnvironment() {
@@ -483,9 +512,9 @@
         function createCPUModel() {
             const group = new THREE.Group();
             group.add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.3), new THREE.MeshStandardMaterial({ color: 0x225522 })));
-            const top = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.025, 0.2), new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8 }));
+            const top = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.025, 0.2), new THREE.MeshStandardMaterial({ color: 0xcccccc }));
             top.position.y = 0.02; group.add(top);
-            const pins = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.005, 0.28), new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.9 }));
+            const pins = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.005, 0.28), new THREE.MeshStandardMaterial({ color: 0xd4af37 }));
             pins.position.y = -0.01; group.add(pins);
             return group;
         }
@@ -501,7 +530,7 @@
         function createRAMModel() {
             const group = new THREE.Group();
             group.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.15, 0.02), new THREE.MeshStandardMaterial({ color: 0x116611 })));
-            const pins = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.025), new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 1 }));
+            const pins = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.025), new THREE.MeshStandardMaterial({ color: 0xd4af37 }));
             pins.position.y = -0.07; group.add(pins);
             return group;
         }
@@ -523,7 +552,7 @@
 
         function createHDDModel() {
             const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.15), new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7 })));
+            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.15), new THREE.MeshStandardMaterial({ color: 0x888888 })));
             return group;
         }
 
@@ -537,7 +566,7 @@
 
         function createCoolerModel() {
             const group = new THREE.Group();
-            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.6 })));
+            group.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), new THREE.MeshStandardMaterial({ color: 0xdddddd })));
             const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.06), new THREE.MeshStandardMaterial({ color: 0x333333 }));
             fan.position.set(0, 0.05, 0.15); fan.rotation.x = Math.PI / 2; fan.userData = { isFan: true }; group.add(fan);
             return group;
@@ -558,7 +587,13 @@
             
             mesh.position.set((Math.random() - 0.5) * 14, 0.1, (Math.random() - 0.5) * 22);
             mesh.rotation.y = Math.random() * Math.PI * 2;
-            mesh.userData = { isHardware: true, type: type, originalPos: mesh.position.clone() };
+            
+            // Add gravity tracking properties
+            mesh.userData = { 
+                isHardware: true, 
+                type: type, 
+                velocity: new THREE.Vector3(0, 0, 0) 
+            };
 
             if (!sharedInfoMat) {
                 const infoCanvas = document.createElement('canvas');
@@ -575,7 +610,7 @@
             mesh.add(infoBtn);
             
             scene.add(mesh);
-            interactableObjects.push(mesh, infoBtn);
+            interactableObjects.push(mesh);
         }
 
         function renderBoard(title, textLines, bgColor) {
@@ -589,74 +624,19 @@
             boardTexture.needsUpdate = true;
         }
 
-        function handleInteraction(object, controller) {
-            if (!object) return;
-            if (object.userData.isCloseButton) { popupGroup.visible = false; return; }
-            if (object.userData.isQuizButton) { isQuizMode = true; currentQuestionIndex = 0; updateQuizUI(); return; }
-            
-            if (object.userData.isPartInfoButton) {
-                const info = hardwareInfo[object.userData.type];
-                renderBoard(info.title, info.desc, "#112233");
-                popupGroup.visible = true; return;
-            }
-
-            if (object.userData.isHardware) {
-                const type = object.userData.type;
-                if (isQuizMode) {
-                    if (quizQuestions[currentQuestionIndex].answer === type) {
-                        currentQuestionIndex++;
-                        if (currentQuestionIndex >= quizQuestions.length) {
-                            renderBoard("Quiz Complete!", ["Excellent work!", "Select Quiz again to restart."], "#2E7D32"); isQuizMode = false;
-                        } else {
-                            renderBoard("Correct!", ["Good job.", "Prepare for next question..."], "#2E7D32"); setTimeout(updateQuizUI, 1500);
-                        }
-                    } else {
-                        renderBoard("Incorrect", ["Try again."], "#C62828"); setTimeout(updateQuizUI, 1500);
-                    }
-                } else {
-                    const info = hardwareInfo[type];
-                    renderBoard(info.title, info.desc, "#112233");
-                    popupGroup.visible = true;
-                }
-
-                if (grabbedObject === object) {
-                    releaseGrabbedObject();
-                    return;
-                }
-
-                if (grabbedObject) releaseGrabbedObject();
-                grabbedObject = object;
-                
-                const direction = new THREE.Vector3();
-                camera.getWorldDirection(direction);
-                const inspectionPos = new THREE.Vector3();
-                camera.getWorldPosition(inspectionPos);
-                inspectionPos.addScaledVector(direction, 1.2); 
-                inspectionPos.y = Math.max(inspectionPos.y, 1.0); 
-                
-                grabbedObject.position.copy(inspectionPos);
-            }
-        }
-
-        function releaseGrabbedObject() {
-            if (grabbedObject) {
-                grabbedObject.position.y = 0.1;
-                grabbedObject.scale.set(1, 1, 1);
-                grabbedObject = null;
-            }
-        }
-
         function updateQuizUI() {
             if (!isQuizMode) return;
             renderBoard("QUIZ MODE", quizQuestions[currentQuestionIndex].text, "#4A148C");
             popupGroup.visible = true;
         }
 
+        // --- Interaction Logic (Hold to Grab & Drop) ---
         function onSelectStart(event) {
             const controller = event.target;
             const tempMatrix = new THREE.Matrix4().extractRotation(controller.matrixWorld);
             raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
             raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            
             const intersects = raycaster.intersectObjects(scene.children, true);
             let hitObj = null;
             if (intersects.length > 0) {
@@ -667,9 +647,45 @@
                 }
                 hitObj = obj;
             }
-            if (hitObj && (hitObj.userData.isHardware || hitObj.userData.isQuizButton || hitObj.userData.isPartInfoButton || hitObj.userData.isCloseButton)) {
-                handleInteraction(hitObj, controller); return;
+
+            if (hitObj) {
+                if (hitObj.userData.isCloseButton) { popupGroup.visible = false; return; }
+                if (hitObj.userData.isQuizButton) { isQuizMode = true; currentQuestionIndex = 0; updateQuizUI(); return; }
+                
+                if (hitObj.userData.isPartInfoButton) {
+                    const info = hardwareInfo[hitObj.userData.type];
+                    renderBoard(info.title, info.desc, "#112233");
+                    popupGroup.visible = true; return;
+                }
+
+                if (hitObj.userData.isHardware) {
+                    const type = hitObj.userData.type;
+                    if (isQuizMode) {
+                        if (quizQuestions[currentQuestionIndex].answer === type) {
+                            currentQuestionIndex++;
+                            if (currentQuestionIndex >= quizQuestions.length) {
+                                renderBoard("Quiz Complete!", ["Excellent work!", "Select Quiz again to restart."], "#2E7D32"); isQuizMode = false;
+                            } else {
+                                renderBoard("Correct!", ["Good job.", "Prepare for next question..."], "#2E7D32"); setTimeout(updateQuizUI, 1500);
+                            }
+                        } else {
+                            renderBoard("Incorrect", ["Try again."], "#C62828"); setTimeout(updateQuizUI, 1500);
+                        }
+                    } else {
+                        const info = hardwareInfo[type];
+                        renderBoard(info.title, info.desc, "#112233");
+                        popupGroup.visible = true;
+                    }
+
+                    // Hold to Grab - Attaches to hand directly to follow physical hand movement
+                    grabbedObject = hitObj;
+                    controller.attach(grabbedObject);
+                    grabbedObject.userData.velocity.set(0, 0, 0); // Zero out gravity
+                    return;
+                }
             }
+
+            // Handle Teleport targeting if no object hit
             if (intersects.length > 0) {
                 const floorIntersect = intersects.find(i => i.object.userData && i.object.userData.isFloor);
                 if (floorIntersect) controller.userData.isTeleporting = true;
@@ -678,6 +694,14 @@
 
         function onSelectEnd(event) {
             const controller = event.target;
+            
+            // Release Object (Drop)
+            if (grabbedObject && grabbedObject.parent === controller) {
+                scene.attach(grabbedObject);
+                grabbedObject = null;
+            }
+
+            // Execute Teleport
             if (controller.userData.isTeleporting) {
                 controller.userData.isTeleporting = false;
                 if (teleportMarker.visible) {
@@ -687,26 +711,48 @@
             }
         }
 
+        // Desktop Controls
         function onKeyDown(e) { keys[e.key.toLowerCase()] = true; }
         function onKeyUp(e) { keys[e.key.toLowerCase()] = false; }
+        
         function onMouseDown(e) {
             if (renderer.xr.isPresenting) return;
             previousMousePosition = { x: e.clientX, y: e.clientY }; dragDistance = 0; clickedUI = false;
             pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(pointer, camera);
             const intersects = raycaster.intersectObjects(scene.children, true);
+            
             if (intersects.length > 0) {
                 let obj = intersects[0].object;
                 while (obj.parent && obj.parent !== scene && obj.parent !== camera && obj.parent !== popupGroup) {
                     if (obj.userData.isHardware || obj.userData.isQuizButton || obj.userData.isPartInfoButton || obj.userData.isCloseButton) break;
                     obj = obj.parent;
                 }
-                if (obj.userData.isCloseButton || obj.userData.isPartInfoButton || obj.userData.isQuizButton) {
-                    handleInteraction(obj, null); clickedUI = true; return;
+                
+                if (obj.userData.isCloseButton) { popupGroup.visible = false; clickedUI = true; return; }
+                if (obj.userData.isPartInfoButton) {
+                    const info = hardwareInfo[obj.userData.type];
+                    renderBoard(info.title, info.desc, "#112233");
+                    popupGroup.visible = true; clickedUI = true; return;
                 }
-                if (obj.userData.isHardware) { handleInteraction(obj, null); isRotatingObject = true; }
-                else isDraggingCamera = true;
-            } else isDraggingCamera = true;
+                if (obj.userData.isQuizButton) { isQuizMode = true; currentQuestionIndex = 0; updateQuizUI(); clickedUI = true; return; }
+                
+                if (obj.userData.isHardware) { 
+                    grabbedObject = obj;
+                    camera.attach(grabbedObject);
+                    grabbedObject.position.set(0, 0, -1); // Hold in front of camera
+                    grabbedObject.userData.velocity.set(0, 0, 0);
+                    isRotatingObject = true; 
+                    
+                    const info = hardwareInfo[obj.userData.type];
+                    renderBoard(info.title, info.desc, "#112233");
+                    popupGroup.visible = true;
+                    return; 
+                }
+                isDraggingCamera = true;
+            } else {
+                isDraggingCamera = true;
+            }
         }
 
         function onMouseMove(e) {
@@ -714,50 +760,40 @@
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
             if (isDraggingCamera || isRotatingObject) dragDistance += Math.abs(deltaX) + Math.abs(deltaY);
-            if (isRotatingObject && grabbedObject) { grabbedObject.rotation.y += deltaX * 0.01; grabbedObject.rotation.x += deltaY * 0.01; }
+            
+            // Desktop Object Rotation
+            if (isRotatingObject && grabbedObject) { 
+                grabbedObject.rotation.y += deltaX * 0.01; 
+                grabbedObject.rotation.x += deltaY * 0.01; 
+            }
+            // Desktop Camera Rotation
             else if (isDraggingCamera) {
                 cameraAngles.theta -= deltaX * 0.005; cameraAngles.phi -= deltaY * 0.005;
                 cameraAngles.phi = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraAngles.phi));
             }
             previousMousePosition = { x: e.clientX, y: e.clientY };
-            pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(interactableObjects, true);
-            if (intersected) { setHighlight(intersected, false); intersected = null; }
-            if (intersects.length > 0 && !grabbedObject) {
-                let obj = intersects[0].object;
-                while (obj.parent && obj.parent !== scene) { if (obj.userData.isHardware || obj.userData.isQuizButton || obj.userData.isPartInfoButton) break; obj = obj.parent; }
-                intersected = obj; setHighlight(intersected, true); document.body.style.cursor = 'pointer';
-            } else document.body.style.cursor = 'default';
         }
 
-        function onMouseUp() { isDraggingCamera = false; isRotatingObject = false; }
+        function onMouseUp() { 
+            // Desktop Drop Object
+            if (grabbedObject && !renderer.xr.isPresenting) {
+                scene.attach(grabbedObject);
+                grabbedObject = null;
+            }
+            isDraggingCamera = false; 
+            isRotatingObject = false; 
+        }
+        
         function onMouseWheel(e) { if (grabbedObject) { e.preventDefault(); grabbedObject.scale.multiplyScalar(Math.max(0.8, Math.min(1.2, 1 - (e.deltaY * 0.001)))); grabbedObject.scale.clampScalar(0.1, 10.0); } }
         function onTouchStart(e) { if (e.touches && e.touches.length > 0) onMouseDown(e.touches[0]); }
         function onTouchMove(e) { if (e.touches && e.touches.length > 0) onMouseMove(e.touches[0]); }
         function onTouchEnd(e) { onMouseUp(); }
         function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
 
-        function setHighlight(obj, state) {
-            obj.traverse(c => { if (c.isMesh && c.material) {
-                const mats = Array.isArray(c.material) ? c.material : [c.material];
-                mats.forEach(m => { if (m.isMeshStandardMaterial) { if (state) { m.emissiveIntensity = 0.4; m.emissive.setHex(0x333333); } else { m.emissiveIntensity = 0; } } });
-            }});
-        }
-
         function animate() {
             const delta = clock.getDelta();
 
-            if (grabbedObject) {
-                const playerPos = new THREE.Vector3();
-                camera.getWorldPosition(playerPos);
-                const dist = playerPos.distanceTo(grabbedObject.position);
-                if (dist > 2.2) { 
-                    releaseGrabbedObject();
-                    popupGroup.visible = false;
-                }
-            }
-
+            // Desktop Locomotion
             if (!renderer.xr.isPresenting) {
                 camera.rotation.order = 'YXZ'; camera.rotation.y = cameraAngles.theta; camera.rotation.x = cameraAngles.phi;
                 playerVelocity.set(0,0,0);
@@ -771,14 +807,13 @@
                 cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
                 cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
             } else {
-                // VR Locomotion (Thumbsticks)
+                // VR Thumbstick Locomotion
                 const session = renderer.xr.getSession();
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
                         if (source.gamepad && source.gamepad.axes) {
                             const axes = source.gamepad.axes; 
                             
-                            // Standard WebXR axes mappings: 2 is X, 3 is Y. Fallback to 0/1 for older hardware.
                             const xAxis = axes.length > 2 ? axes[2] : axes[0];
                             const yAxis = axes.length > 3 ? axes[3] : axes[1];
                             
@@ -795,19 +830,15 @@
                                 // Scale grabbed object
                                 if (grabbedObject && Math.abs(yAxis) > 0.1) {
                                     const scaleAmount = yAxis > 0 ? 0.98 : 1.02;
-                                    grabbedObject.scale.multiplyScalar(scaleAmount);
-                                    grabbedObject.scale.clampScalar(0.1, 10.0);
+                                    grabbedObject.scale.multiplyScalar(scaleAmount).clampScalar(0.1, 10.0);
                                 }
                             }
                             
-                            // Right Controller (Turning & Object Rotation)
+                            // Right Controller (Turning & Object Rotation Fallback)
                             if (source.handedness === 'right') {
-                                // View Turning
                                 if (!grabbedObject && Math.abs(xAxis) > 0.1) {
                                     cameraGroup.rotation.y -= xAxis * 2.5 * delta;
                                 }
-                                
-                                // Rotate grabbed object
                                 if (grabbedObject) {
                                     if (Math.abs(xAxis) > 0.1) grabbedObject.rotation.y += xAxis * 3.0 * delta;
                                     if (Math.abs(yAxis) > 0.1) grabbedObject.rotation.x += yAxis * 3.0 * delta;
@@ -816,27 +847,55 @@
                         }
                     }
                 }
-                // Constrain player to room boundaries in VR
                 cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
                 cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
             }
 
+            // Object Updates (Fans & Gravity)
             interactableObjects.forEach(obj => {
-                if (obj.userData && obj.userData.isHardware) obj.traverse(c => { if (c.userData.isFan) c.rotation.y += 10 * delta; });
-                if (obj.userData && obj.userData.isPartInfoButton) obj.lookAt(camera.position);
+                if (obj.userData && obj.userData.isHardware) {
+                    // Spin Fans
+                    obj.traverse(c => { if (c.userData.isFan) c.rotation.y += 10 * delta; });
+                    
+                    // Gravity Physics
+                    if (obj !== grabbedObject) {
+                        if (!obj.userData.velocity) obj.userData.velocity = new THREE.Vector3(0, 0, 0);
+                        
+                        // Accelerate downwards if above floor
+                        if (obj.position.y > 0.1) {
+                            obj.userData.velocity.y -= 9.8 * delta; 
+                            obj.position.y += obj.userData.velocity.y * delta;
+                        }
+                        
+                        // Floor Collision
+                        if (obj.position.y <= 0.1) {
+                            obj.position.y = 0.1;
+                            obj.userData.velocity.set(0, 0, 0);
+                        }
+                    }
+                }
+                
+                // Billboard Info buttons
+                if (obj.userData && obj.userData.isPartInfoButton) {
+                    obj.lookAt(camera.position);
+                }
             });
 
+            // Handle Teleport marker
             if (renderer.xr.isPresenting) {
                 let isAimingTeleport = false;
                 [controller1, controller2].forEach(c => {
-                    if (c.visible) {
+                    if (c.visible && c.userData.isTeleporting) {
                         const m = new THREE.Matrix4().extractRotation(c.matrixWorld);
                         raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
                         raycaster.ray.direction.set(0, 0, -1).applyMatrix4(m);
                         const intersects = raycaster.intersectObjects(scene.children, true);
-                        if (c.userData.isTeleporting) {
-                            const fi = intersects.find(i => i.object.userData && i.object.userData.isFloor);
-                            if (fi) { teleportMarker.position.copy(fi.point); teleportMarker.position.y += 0.01; teleportMarker.visible = true; isAimingTeleport = true; }
+                        const fi = intersects.find(i => i.object.userData && i.object.userData.isFloor);
+                        if (fi) { 
+                            teleportMarker.position.copy(fi.point); 
+                            teleportMarker.position.y += 0.01; 
+                            teleportMarker.visible = true; 
+                            isAimingTeleport = true; 
                         }
                     }
                 });
