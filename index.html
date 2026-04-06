@@ -52,8 +52,8 @@
 
     <div id="info-overlay">
         <h1>LHU - PC Hardware VR Lab</h1>
-        <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag empty space to look around. Click INFO to read. <strong>Click components to inspect. It stays in place; walk away to drop it.</strong></p>
-        <p><strong>VR Headset:</strong> Left Stick to Walk. Right Stick to Turn. Trigger to Grab/Interact. <strong>Right Stick (while holding) to rotate object.</strong></p>
+        <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag empty space to look around. Click INFO to read. <strong>Click components to grab, drag to rotate, scroll wheel to resize. Click again to drop.</strong></p>
+        <p><strong>VR Headset:</strong> Point at floor and hold trigger to teleport. Point at INFO to read. <strong>Click trigger to grab items, use thumbstick to resize. Click trigger again to drop.</strong></p>
     </div>
 
     <script>
@@ -670,9 +670,22 @@
             if (hitObj && (hitObj.userData.isHardware || hitObj.userData.isQuizButton || hitObj.userData.isPartInfoButton || hitObj.userData.isCloseButton)) {
                 handleInteraction(hitObj, controller); return;
             }
+            if (intersects.length > 0) {
+                const floorIntersect = intersects.find(i => i.object.userData && i.object.userData.isFloor);
+                if (floorIntersect) controller.userData.isTeleporting = true;
+            }
         }
 
-        function onSelectEnd(event) {}
+        function onSelectEnd(event) {
+            const controller = event.target;
+            if (controller.userData.isTeleporting) {
+                controller.userData.isTeleporting = false;
+                if (teleportMarker.visible) {
+                    const offset = new THREE.Vector3().subVectors(teleportMarker.position, cameraGroup.position);
+                    offset.y = 0; cameraGroup.position.add(offset); teleportMarker.visible = false;
+                }
+            }
+        }
 
         function onKeyDown(e) { keys[e.key.toLowerCase()] = true; }
         function onKeyUp(e) { keys[e.key.toLowerCase()] = false; }
@@ -739,14 +752,13 @@
                 const playerPos = new THREE.Vector3();
                 camera.getWorldPosition(playerPos);
                 const dist = playerPos.distanceTo(grabbedObject.position);
-                if (dist > 2.5) { 
+                if (dist > 2.2) { 
                     releaseGrabbedObject();
                     popupGroup.visible = false;
                 }
             }
 
             if (!renderer.xr.isPresenting) {
-                document.getElementById('info-overlay').style.display = 'block';
                 camera.rotation.order = 'YXZ'; camera.rotation.y = cameraAngles.theta; camera.rotation.x = cameraAngles.phi;
                 playerVelocity.set(0,0,0);
                 const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
@@ -758,51 +770,6 @@
                 cameraGroup.position.add(playerVelocity);
                 cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
                 cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
-            } else {
-                document.getElementById('info-overlay').style.display = 'none';
-                const session = renderer.xr.getSession();
-                if (session && session.inputSources) {
-                    for (const source of session.inputSources) {
-                        if (source.gamepad && source.gamepad.axes) {
-                            const axes = source.gamepad.axes; 
-                            
-                            // Left Controller (Locomotion & Scaling)
-                            if (source.handedness === 'left') {
-                                const moveDir = new THREE.Vector3();
-                                camera.getWorldDirection(moveDir);
-                                moveDir.y = 0; moveDir.normalize();
-                                const moveRight = new THREE.Vector3().crossVectors(moveDir, camera.up).normalize();
-                                
-                                // axis[1] is forward/back, axis[0] is strafe
-                                if (Math.abs(axes[1]) > 0.1) cameraGroup.position.addScaledVector(moveDir, -axes[1] * 3.5 * delta);
-                                if (Math.abs(axes[0]) > 0.1) cameraGroup.position.addScaledVector(moveRight, axes[0] * 3.5 * delta);
-                                
-                                // Scale grabbed object using left stick vertical if stationary
-                                if (grabbedObject && Math.abs(axes[1]) > 0.1) {
-                                    const scaleAmount = axes[1] > 0 ? 0.98 : 1.02;
-                                    grabbedObject.scale.multiplyScalar(scaleAmount);
-                                    grabbedObject.scale.clampScalar(0.1, 10.0);
-                                }
-                            }
-                            
-                            // Right Controller (Turning & Object Rotation)
-                            if (source.handedness === 'right') {
-                                // View Turning (Smooth)
-                                if (Math.abs(axes[0]) > 0.1) {
-                                    cameraGroup.rotation.y -= axes[0] * 2.5 * delta;
-                                }
-                                
-                                // Rotate grabbed object
-                                if (grabbedObject) {
-                                    if (Math.abs(axes[0]) > 0.1) grabbedObject.rotation.y += axes[0] * 3.0 * delta;
-                                    if (Math.abs(axes[1]) > 0.1) grabbedObject.rotation.x += axes[1] * 3.0 * delta;
-                                }
-                            }
-                        }
-                    }
-                }
-                cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
-                cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
             }
 
             interactableObjects.forEach(obj => {
@@ -810,6 +777,38 @@
                 if (obj.userData && obj.userData.isPartInfoButton) obj.lookAt(camera.position);
             });
 
+            if (renderer.xr.isPresenting) {
+                if (grabbedObject) {
+                    const session = renderer.xr.getSession();
+                    if (session && session.inputSources) {
+                        for (const source of session.inputSources) {
+                            if (source.gamepad && source.gamepad.axes.length >= 2) {
+                                const yAxis = source.gamepad.axes[1];
+                                if (Math.abs(yAxis) > 0.1) {
+                                    const scaleAmount = yAxis > 0 ? 0.97 : 1.03;
+                                    grabbedObject.scale.multiplyScalar(scaleAmount);
+                                    grabbedObject.scale.clampScalar(0.1, 10.0);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let isAimingTeleport = false;
+                [controller1, controller2].forEach(c => {
+                    if (c.visible) {
+                        const m = new THREE.Matrix4().extractRotation(c.matrixWorld);
+                        raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
+                        raycaster.ray.direction.set(0, 0, -1).applyMatrix4(m);
+                        const intersects = raycaster.intersectObjects(scene.children, true);
+                        if (c.userData.isTeleporting) {
+                            const fi = intersects.find(i => i.object.userData && i.object.userData.isFloor);
+                            if (fi) { teleportMarker.position.copy(fi.point); teleportMarker.position.y += 0.01; teleportMarker.visible = true; isAimingTeleport = true; }
+                        }
+                    }
+                });
+                if (!isAimingTeleport) teleportMarker.visible = false;
+            }
             renderer.render(scene, camera);
         }
     </script>
