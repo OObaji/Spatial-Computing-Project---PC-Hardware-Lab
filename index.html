@@ -770,6 +770,55 @@
                 cameraGroup.position.add(playerVelocity);
                 cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
                 cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
+            } else {
+                // VR Locomotion (Thumbsticks)
+                const session = renderer.xr.getSession();
+                if (session && session.inputSources) {
+                    for (const source of session.inputSources) {
+                        if (source.gamepad && source.gamepad.axes) {
+                            const axes = source.gamepad.axes; 
+                            
+                            // Standard WebXR axes mappings: 2 is X, 3 is Y. Fallback to 0/1 for older hardware.
+                            const xAxis = axes.length > 2 ? axes[2] : axes[0];
+                            const yAxis = axes.length > 3 ? axes[3] : axes[1];
+                            
+                            // Left Controller (Locomotion & Scaling)
+                            if (source.handedness === 'left') {
+                                const moveDir = new THREE.Vector3(); 
+                                camera.getWorldDirection(moveDir); 
+                                moveDir.y = 0; moveDir.normalize();
+                                const moveRight = new THREE.Vector3().crossVectors(moveDir, camera.up).normalize();
+                                
+                                if (Math.abs(yAxis) > 0.1) cameraGroup.position.addScaledVector(moveDir, -yAxis * 3.5 * delta);
+                                if (Math.abs(xAxis) > 0.1) cameraGroup.position.addScaledVector(moveRight, xAxis * 3.5 * delta);
+                                
+                                // Scale grabbed object
+                                if (grabbedObject && Math.abs(yAxis) > 0.1) {
+                                    const scaleAmount = yAxis > 0 ? 0.98 : 1.02;
+                                    grabbedObject.scale.multiplyScalar(scaleAmount);
+                                    grabbedObject.scale.clampScalar(0.1, 10.0);
+                                }
+                            }
+                            
+                            // Right Controller (Turning & Object Rotation)
+                            if (source.handedness === 'right') {
+                                // View Turning
+                                if (!grabbedObject && Math.abs(xAxis) > 0.1) {
+                                    cameraGroup.rotation.y -= xAxis * 2.5 * delta;
+                                }
+                                
+                                // Rotate grabbed object
+                                if (grabbedObject) {
+                                    if (Math.abs(xAxis) > 0.1) grabbedObject.rotation.y += xAxis * 3.0 * delta;
+                                    if (Math.abs(yAxis) > 0.1) grabbedObject.rotation.x += yAxis * 3.0 * delta;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Constrain player to room boundaries in VR
+                cameraGroup.position.x = Math.max(-7.5, Math.min(7.5, cameraGroup.position.x));
+                cameraGroup.position.z = Math.max(-12.5, Math.min(12.5, cameraGroup.position.z));
             }
 
             interactableObjects.forEach(obj => {
@@ -778,22 +827,6 @@
             });
 
             if (renderer.xr.isPresenting) {
-                if (grabbedObject) {
-                    const session = renderer.xr.getSession();
-                    if (session && session.inputSources) {
-                        for (const source of session.inputSources) {
-                            if (source.gamepad && source.gamepad.axes.length >= 2) {
-                                const yAxis = source.gamepad.axes[1];
-                                if (Math.abs(yAxis) > 0.1) {
-                                    const scaleAmount = yAxis > 0 ? 0.97 : 1.03;
-                                    grabbedObject.scale.multiplyScalar(scaleAmount);
-                                    grabbedObject.scale.clampScalar(0.1, 10.0);
-                                }
-                            }
-                        }
-                    }
-                }
-
                 let isAimingTeleport = false;
                 [controller1, controller2].forEach(c => {
                     if (c.visible) {
