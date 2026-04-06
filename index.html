@@ -53,7 +53,7 @@
     <div id="info-overlay">
         <h1>LHU - PC Hardware VR Lab</h1>
         <p><strong>Desktop:</strong> Use W,A,S,D to walk. Click and drag to look. <strong>Hold click on component to grab, drag to rotate. Release to drop.</strong></p>
-        <p><strong>VR Headset:</strong> Left Stick to Walk. Right Stick to Snap-Turn. <strong>Hold Trigger to grab item and twist your hand to rotate it. Release to drop.</strong></p>
+        <p><strong>VR Headset:</strong> <strong>Grip Button</strong> to Grab. <strong>Trigger</strong> to View Info/Teleport. Right Stick to Snap-Turn.</p>
     </div>
 
     <script>
@@ -283,15 +283,20 @@
             teleportMarker.visible = false;
             scene.add(teleportMarker);
 
+            // VR Controllers Setup
             controller1 = renderer.xr.getController(0);
             controller1.addEventListener('selectstart', onSelectStart);
             controller1.addEventListener('selectend', onSelectEnd);
+            controller1.addEventListener('squeezestart', onSqueezeStart); // Add Grip Button support
+            controller1.addEventListener('squeezeend', onSqueezeEnd);
             controller1.add(createVRHand()); // Attach hand model
             cameraGroup.add(controller1);
 
             controller2 = renderer.xr.getController(1);
             controller2.addEventListener('selectstart', onSelectStart);
             controller2.addEventListener('selectend', onSelectEnd);
+            controller2.addEventListener('squeezestart', onSqueezeStart); // Add Grip Button support
+            controller2.addEventListener('squeezeend', onSqueezeEnd);
             controller2.add(createVRHand()); // Attach hand model
             cameraGroup.add(controller2);
 
@@ -629,7 +634,45 @@
             popupGroup.visible = true;
         }
 
-        // --- Interaction Logic (Hold to Grab & Drop) ---
+        // --- VR Grip Logic (Hold to Grab & Drop) ---
+        function onSqueezeStart(event) {
+            const controller = event.target;
+            const tempMatrix = new THREE.Matrix4().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            
+            const intersects = raycaster.intersectObjects(scene.children, true);
+            let hitObj = null;
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                while (obj.parent && obj.parent !== scene && obj.parent !== camera && obj.parent !== popupGroup) {
+                    if (obj.userData.isHardware) break;
+                    obj = obj.parent;
+                }
+                if (obj.userData && obj.userData.isHardware) hitObj = obj;
+            }
+
+            if (hitObj) {
+                // Release old object if any
+                if (grabbedObject) releaseGrabbedObject();
+
+                // Attach to hand directly to follow physical hand movement
+                grabbedObject = hitObj;
+                controller.attach(grabbedObject);
+                grabbedObject.userData.velocity.set(0, 0, 0); // Zero out gravity
+            }
+        }
+
+        function onSqueezeEnd(event) {
+            const controller = event.target;
+            // Release Object (Drop into physics gravity)
+            if (grabbedObject && grabbedObject.parent === controller) {
+                scene.attach(grabbedObject);
+                grabbedObject = null;
+            }
+        }
+
+        // --- VR Trigger Logic (Click to View Info / UI) ---
         function onSelectStart(event) {
             const controller = event.target;
             const tempMatrix = new THREE.Matrix4().extractRotation(controller.matrixWorld);
@@ -651,15 +694,9 @@
                 if (hitObj.userData.isCloseButton) { popupGroup.visible = false; return; }
                 if (hitObj.userData.isQuizButton) { isQuizMode = true; currentQuestionIndex = 0; updateQuizUI(); return; }
                 
-                if (hitObj.userData.isPartInfoButton) {
-                    const info = hardwareInfo[hitObj.userData.type];
-                    renderBoard(info.title, info.desc, "#112233");
-                    popupGroup.visible = true; return;
-                }
-
-                if (hitObj.userData.isHardware) {
+                if (hitObj.userData.isPartInfoButton || hitObj.userData.isHardware) {
                     const type = hitObj.userData.type;
-                    if (isQuizMode) {
+                    if (isQuizMode && hitObj.userData.isHardware) {
                         if (quizQuestions[currentQuestionIndex].answer === type) {
                             currentQuestionIndex++;
                             if (currentQuestionIndex >= quizQuestions.length) {
@@ -671,19 +708,12 @@
                             renderBoard("Incorrect", ["Try again."], "#C62828"); setTimeout(updateQuizUI, 1500);
                         }
                     } else {
+                        // Display the informational popup
                         const info = hardwareInfo[type];
                         renderBoard(info.title, info.desc, "#112233");
                         popupGroup.visible = true;
                     }
-
-                    // Release old object if any
-                    if (grabbedObject) releaseGrabbedObject();
-
-                    // Hold to Grab - Attaches to hand directly to follow physical hand movement
-                    grabbedObject = hitObj;
-                    controller.attach(grabbedObject);
-                    grabbedObject.userData.velocity.set(0, 0, 0); // Zero out gravity
-                    return;
+                    return; // Just viewing info, do NOT grab with trigger
                 }
             }
 
@@ -697,12 +727,6 @@
         function onSelectEnd(event) {
             const controller = event.target;
             
-            // Release Object (Drop into physics gravity)
-            if (grabbedObject && grabbedObject.parent === controller) {
-                scene.attach(grabbedObject);
-                grabbedObject = null;
-            }
-
             // Execute Teleport
             if (controller.userData.isTeleporting) {
                 controller.userData.isTeleporting = false;
